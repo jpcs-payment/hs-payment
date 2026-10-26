@@ -26,6 +26,7 @@ export interface Student {
   strand?: string;
   course?: string;
   avatar: string;
+  archivedAt?: string;
 }
 
 export interface PaymentMethodConfig {
@@ -49,6 +50,7 @@ export interface PaymentOffering {
   allocations: PaymentAllocation[];
   payLaterMethods: PaymentMethod[];
   payLaterDeadlineAt?: string;
+  archivedAt?: string;
 }
 
 export interface PaymentRecord {

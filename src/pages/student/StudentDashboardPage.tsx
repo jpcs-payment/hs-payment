@@ -17,7 +17,7 @@ export function StudentDashboardPage() {
   const latestPayment = getLatestPayment(data.payments, student.id);
   const approvedTotal = payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0);
   const pendingCount = payments.filter((payment) => payment.status === "Pending").length;
-  const activeOfferings = data.offerings.filter((offering) => offering.active);
+  const activeOfferings = data.offerings.filter((offering) => offering.active && !offering.archivedAt);
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-6">

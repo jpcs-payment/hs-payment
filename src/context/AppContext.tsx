@@ -22,8 +22,11 @@ interface AppContextValue {
   data: AppData;
   session: Session | null;
   authLoading: boolean;
+  dataLoading: boolean;
+  dataError: string | null;
   login: (session: Session) => void;
   logout: () => void;
+  retryData: () => Promise<void>;
   signInAdmin: (email: string, password: string) => Promise<void>;
   submitPayment: (input: NewPaymentInput) => Promise<PaymentRecord>;
   approvePayment: (paymentId: string) => Promise<PaymentRecord | undefined>;
@@ -32,8 +35,13 @@ interface AppContextValue {
   sendPayLaterEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
   markPayLaterReceived: (paymentId: string) => Promise<PaymentRecord | undefined>;
   checkInTicket: (value: string) => Promise<TicketCheckInResult>;
+  undoAttendance: (paymentId: string) => Promise<PaymentRecord | undefined>;
   createOffering: (input: NewPaymentOfferingInput) => Promise<PaymentOffering>;
   saveOffering: (offering: PaymentOffering) => Promise<void>;
+  archiveOffering: (offeringId: string) => Promise<void>;
+  restoreOffering: (offeringId: string) => Promise<void>;
+  archivePayer: (payerId: string) => Promise<void>;
+  restorePayer: (payerId: string) => Promise<void>;
   savePaymentMethod: (method: PaymentMethodConfig) => Promise<void>;
   resetDemo: () => void;
 }
@@ -88,6 +96,7 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
     payLaterMethods: Array.isArray(row.pay_later_methods) ? row.pay_later_methods : [],
     payLaterDeadlineAt: row.pay_later_deadline_at ?? undefined,
+    archivedAt: row.archived_at ?? undefined,
   };
 };
 
@@ -109,6 +118,7 @@ const mapPayer = (row: DbRow): Student => ({
   strand: row.strand ?? undefined,
   course: row.course ?? undefined,
   avatar: String(row.avatar ?? initials(String(row.name ?? ""))),
+  archivedAt: row.archived_at ?? undefined,
 });
 
 const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<string, PaymentOffering>): PaymentRecord => {
@@ -169,40 +179,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(() => cloneInitialData());
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(Boolean(supabase));
+  const [dataError, setDataError] = useState<string | null>(null);
 
   const loadData = async (admin = false) => {
-    const client = requireSupabase();
-    const offeringsQuery = client.from("hs-offerings").select("*").order("created_at", { ascending: true });
-    const methodsQuery = client.from("hs-payment-methods").select("*").order("id", { ascending: true });
-    if (!admin) {
-      offeringsQuery.eq("active", true);
-      methodsQuery.eq("enabled", true);
-    }
-    const [offeringsResponse, methodsResponse] = await Promise.all([
-      offeringsQuery,
-      methodsQuery,
-    ]);
-    if (offeringsResponse.error) throw offeringsResponse.error;
-    if (methodsResponse.error) throw methodsResponse.error;
+    setDataLoading(true);
+    setDataError(null);
+    try {
+      const client = requireSupabase();
+      const offeringsQuery = client.from("hs-offerings").select("*").order("created_at", { ascending: true });
+      const methodsQuery = client.from("hs-payment-methods").select("*").order("id", { ascending: true });
+      if (!admin) {
+        offeringsQuery.eq("active", true).is("archived_at", null);
+        methodsQuery.eq("enabled", true);
+      }
+      const [offeringsResponse, methodsResponse] = await Promise.all([
+        offeringsQuery,
+        methodsQuery,
+      ]);
+      if (offeringsResponse.error) throw offeringsResponse.error;
+      if (methodsResponse.error) throw methodsResponse.error;
 
-    const offerings = (offeringsResponse.data ?? []).map(mapOffering);
-    const paymentMethods = (methodsResponse.data ?? []).map(mapMethod);
-    if (!admin) {
-      setData((current) => ({ ...current, offerings, paymentMethods }));
-      return;
-    }
+      const offerings = (offeringsResponse.data ?? []).map(mapOffering);
+      const paymentMethods = (methodsResponse.data ?? []).map(mapMethod);
+      if (!admin) {
+        setData((current) => ({ ...current, offerings, paymentMethods }));
+        return;
+      }
 
-    const [payersResponse, paymentsResponse] = await Promise.all([
-      client.from("hs-payers").select("*").order("created_at", { ascending: false }),
-      client.from("hs-payments").select("*").order("submitted_at", { ascending: false }),
-    ]);
-    if (payersResponse.error) throw payersResponse.error;
-    if (paymentsResponse.error) throw paymentsResponse.error;
-    const students = (payersResponse.data ?? []).map(mapPayer);
-    const payers = new Map(students.map((payer) => [payer.id, payer]));
-    const offeringMap = new Map(offerings.map((offering) => [offering.id, offering]));
-    const payments = (paymentsResponse.data ?? []).map((payment) => mapPayment(payment, payers, offeringMap));
-    setData({ students, offerings, paymentMethods, payments, developers: [] });
+      const [payersResponse, paymentsResponse] = await Promise.all([
+        client.from("hs-payers").select("*").order("created_at", { ascending: false }),
+        client.from("hs-payments").select("*").order("submitted_at", { ascending: false }),
+      ]);
+      if (payersResponse.error) throw payersResponse.error;
+      if (paymentsResponse.error) throw paymentsResponse.error;
+      const students = (payersResponse.data ?? []).map(mapPayer);
+      const payers = new Map(students.map((payer) => [payer.id, payer]));
+      const offeringMap = new Map(offerings.map((offering) => [offering.id, offering]));
+      const payments = (paymentsResponse.data ?? []).map((payment) => mapPayment(payment, payers, offeringMap));
+      setData({ students, offerings, paymentMethods, payments, developers: [] });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
+      setDataError(message);
+      throw error;
+    } finally {
+      setDataLoading(false);
+    }
   };
 
   const getAdminAuthProfile = async () => {
@@ -218,6 +240,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!supabase) {
+      setDataLoading(false);
       setAuthLoading(false);
       return undefined;
     }
@@ -231,6 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await loadData(Boolean(admin));
       } catch {
         if (mounted) setData(cloneInitialData());
+        if (mounted) setDataError("The payment data could not be loaded.");
       } finally {
         if (mounted) setAuthLoading(false);
       }
@@ -253,6 +277,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (supabase) void supabase.auth.signOut();
   };
 
+  const retryData = async () => {
+    try {
+      await loadData(session?.role === "admin");
+    } catch {
+      // The load error is exposed through dataError for the retry UI.
+    }
+  };
+
   const signInAdmin = async (email: string, password: string) => {
     const client = requireSupabase();
     const { error } = await client.auth.signInWithPassword({ email: email.trim(), password });
@@ -268,7 +300,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const submitPayment = async (input: NewPaymentInput) => {
     const client = requireSupabase();
-    const offering = data.offerings.find((item) => item.id === input.offeringId && item.active);
+    const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.archivedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
     if (!offering.availableMethods.includes(input.method)) throw new Error("That payment method is not available.");
@@ -536,6 +568,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { ok: true, kind: "checked-in", payment: checkedInPayment, paymentPending };
   };
 
+  const undoAttendance = async (paymentId: string) => {
+    const client = requireSupabase();
+    const currentPayment = data.payments.find((payment) => payment.id === paymentId);
+    if (!currentPayment) return undefined;
+    const { error } = await client.from("hs-payments").update({ attended_at: null }).eq("id", paymentId).not("attended_at", "is", null);
+    if (error) throw error;
+    const updatedPayment = { ...currentPayment, attendedAt: undefined };
+    setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? updatedPayment : payment) }));
+    return updatedPayment;
+  };
+
+  const setOfferingArchived = async (offeringId: string, archivedAt: string | null) => {
+    const client = requireSupabase();
+    const { error } = await client.from("hs-offerings").update({ archived_at: archivedAt }).eq("id", offeringId);
+    if (error) throw error;
+    setData((current) => ({ ...current, offerings: current.offerings.map((offering) => offering.id === offeringId ? { ...offering, archivedAt: archivedAt ?? undefined } : offering) }));
+  };
+
+  const archiveOffering = async (offeringId: string) => setOfferingArchived(offeringId, new Date().toISOString());
+  const restoreOffering = async (offeringId: string) => setOfferingArchived(offeringId, null);
+
+  const setPayerArchived = async (payerId: string, archivedAt: string | null) => {
+    const client = requireSupabase();
+    const { error } = await client.from("hs-payers").update({ archived_at: archivedAt }).eq("id", payerId);
+    if (error) throw error;
+    setData((current) => ({ ...current, students: current.students.map((student) => student.id === payerId ? { ...student, archivedAt: archivedAt ?? undefined } : student) }));
+  };
+
+  const archivePayer = async (payerId: string) => setPayerArchived(payerId, new Date().toISOString());
+  const restorePayer = async (payerId: string) => setPayerArchived(payerId, null);
+
   const createOffering = async (input: NewPaymentOfferingInput) => {
     const client = requireSupabase();
     const { data: row, error } = await client.from("hs-offerings").insert({
@@ -593,7 +656,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, login, logout, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, createOffering, saveOffering, savePaymentMethod, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, archivePayer, restorePayer, savePaymentMethod, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

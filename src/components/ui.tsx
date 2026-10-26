@@ -50,6 +50,14 @@ export function Card({ className, children }: { className?: string; children: Re
   return <section className={cn("rounded-2xl border border-line bg-white shadow-soft", className)}>{children}</section>;
 }
 
+export function Skeleton({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cn("block animate-pulse rounded-xl bg-slate-200/80", className)} />;
+}
+
+export function PageSkeleton({ label = "Loading" }: { label?: string }) {
+  return <div className="mx-auto w-full max-w-[1400px] space-y-6" role="status" aria-label={label}><div className="flex items-end justify-between gap-4"><div className="w-full max-w-xl space-y-3"><Skeleton className="h-3 w-28" /><Skeleton className="h-9 w-64" /><Skeleton className="h-4 w-full max-w-md" /></div><Skeleton className="h-10 w-32" /></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /><Skeleton className="h-28" /></div><Skeleton className="h-16 w-full" /><Skeleton className="h-80 w-full" /><span className="sr-only">{label}</span></div>;
+}
+
 export function Badge({ className, children }: { className?: string; children: ReactNode }) {
   return <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide", className)}>{children}</span>;
 }

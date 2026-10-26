@@ -16,7 +16,7 @@ function LegacyPaymentMethodsPage() {
   const { pushToast } = useToast();
   const [methodDraft, setMethodDraft] = useState<PaymentMethodConfig | null>(null);
   const [loading, setLoading] = useState(false);
-  const activeOfferings = data.offerings.filter((item) => item.active);
+  const activeOfferings = data.offerings.filter((item) => item.active && !item.archivedAt);
   const offering = activeOfferings[0];
 
   const toggleMethod = async (method: PaymentMethodConfig) => {
@@ -54,7 +54,7 @@ function PaymentMethodsContent() {
   const { pushToast } = useToast();
   const [methodDraft, setMethodDraft] = useState<PaymentMethodConfig | null>(null);
   const [loading, setLoading] = useState(false);
-  const activeTypes = data.offerings.filter((item) => item.active);
+  const activeTypes = data.offerings.filter((item) => item.active && !item.archivedAt);
   const type = activeTypes[0];
 
   const toggleMethod = async (method: PaymentMethodConfig) => {

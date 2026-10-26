@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { BarChart3, CheckCircle2, Clock3, Download, Filter, Search, UsersRound } from "lucide-react";
 import { Button, Card, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
-import { downloadPaymentCsv } from "../../lib/export";
+import { downloadCsv, downloadPaymentCsv } from "../../lib/export";
+import { summarizeAllocations } from "../../lib/reporting";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import type { PaymentStatus } from "../../types";
 
@@ -24,6 +25,8 @@ export function ReportsPage() {
   const paymentPendingAfterAttendance = attended.filter((payment) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid");
   const collected = payments.filter((payment) => payment.paymentState === "Paid").reduce((sum, payment) => sum + payment.amount, 0);
   const outstanding = payments.filter((payment) => payment.paymentState === "Unpaid").reduce((sum, payment) => sum + payment.amount, 0);
+  const allocationSummaries = useMemo(() => summarizeAllocations(payments), [payments]);
+  const exportAllocations = () => downloadCsv(`jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.csv`, ["Recipient", "Allocated", "Collected", "Outstanding", "Pending", "Records"], allocationSummaries.map((summary) => [summary.recipient, summary.allocated, summary.collected, summary.outstanding, summary.pending, summary.recordCount]));
 
   return (
     <div className="mx-auto max-w-[1450px] space-y-6">
@@ -42,6 +45,8 @@ export function ReportsPage() {
         <ReportStat label="Outstanding" value={formatCurrency(outstanding)} detail="Still unpaid" icon={Clock3} />
         <ReportStat label="Attended but unpaid" value={paymentPendingAfterAttendance.length} detail="Needs follow-up" icon={UsersRound} />
       </section>
+
+      <Card className="overflow-hidden"><div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Allocation report</p><h3 className="mt-1 text-base font-extrabold text-navy-900">Separate destination totals</h3><p className="mt-1 text-xs leading-5 text-slate-500">Rejected payments are excluded from all allocation totals.</p></div><Button variant="outline" size="sm" onClick={exportAllocations} disabled={!allocationSummaries.length}><Download className="h-3.5 w-3.5" /> Export allocations</Button></div>{allocationSummaries.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left"><thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-5 py-3">Recipient</th><th className="px-5 py-3">Allocated</th><th className="px-5 py-3">Collected</th><th className="px-5 py-3">Outstanding</th><th className="px-5 py-3">Pending</th><th className="px-5 py-3">Records</th></tr></thead><tbody className="divide-y divide-line">{allocationSummaries.map((summary) => <tr key={summary.recipient} className="text-xs"><td className="px-5 py-4 font-bold text-navy-900">{summary.recipient}</td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(summary.allocated)}</td><td className="px-5 py-4 font-semibold text-emerald-700">{formatCurrency(summary.collected)}</td><td className="px-5 py-4 font-semibold text-amber-700">{formatCurrency(summary.outstanding)}</td><td className="px-5 py-4 font-semibold text-blue-700">{formatCurrency(summary.pending)}</td><td className="px-5 py-4 font-semibold text-slate-600">{summary.recordCount}</td></tr>)}</tbody></table></div> : <div className="p-8 text-center text-sm text-slate-500">No allocation records match the current filters.</div>}</Card>
 
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">

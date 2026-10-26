@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { Check, Coins, Download, Layers3, Plus, Save, Settings2, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
-import { Button, Card, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
+import { Button, Card, ConfirmDialog, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
-import { formatCurrency, formatManilaDateTime } from "../../lib/utils";
+import { createId, formatCurrency, formatManilaDateTime } from "../../lib/utils";
 import { downloadCsv } from "../../lib/export";
 import type { NewPaymentOfferingInput, PaymentAllocation, PaymentMethod, PaymentOffering, SchoolLevel } from "../../types";
 
@@ -11,8 +11,11 @@ const methods: PaymentMethod[] = ["Cash", "GCash", "MariBank"];
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 
 type EditableAmount = number;
-type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount };
+type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount; draftId: string };
 type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[] };
+
+const toDraftAllocations = (allocations: PaymentAllocation[]): EditableAllocation[] => allocations.map((allocation) => ({ ...allocation, draftId: createId("allocation") }));
+const toOfferingDraft = (offering: PaymentOffering): OfferingDraft => ({ ...offering, allocations: toDraftAllocations(offering.allocations) });
 
 const emptyDraft = (): OfferingDraft => ({
   slug: "",
@@ -22,7 +25,7 @@ const emptyDraft = (): OfferingDraft => ({
   active: true,
   availableMethods: [...methods],
   applicableSchoolLevels: [...schoolLevels],
-  allocations: [{ recipient: "JPCS", amount: 60 }],
+  allocations: [{ recipient: "JPCS", amount: 60, draftId: createId("allocation") }],
   payLaterMethods: [],
   payLaterDeadlineAt: undefined,
 });
@@ -36,10 +39,12 @@ const toLocalDateTimeInput = (value?: string) => {
 };
 
 function LegacyOfferingsPage() {
-  const { data, createOffering, saveOffering } = useApp();
+  const { data, createOffering, saveOffering, archiveOffering } = useApp();
   const { pushToast } = useToast();
   const [draft, setDraft] = useState<OfferingDraft | null>(null);
   const [saving, setSaving] = useState(false);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+  const [archiveLoading, setArchiveLoading] = useState(false);
 
   const updateDraft = <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => {
     setDraft((current) => current ? { ...current, [key]: value } : current);
@@ -84,7 +89,7 @@ function LegacyOfferingsPage() {
     setDraft((current) => current ? { ...current, allocations: current.allocations.map((allocation, allocationIndex) => allocationIndex === index ? { ...allocation, ...value } : allocation) } : current);
   };
 
-  const addAllocation = () => setDraft((current) => current ? { ...current, allocations: [...current.allocations, { recipient: "", amount: 0 }] } : current);
+  const addAllocation = () => setDraft((current) => current ? { ...current, allocations: [...current.allocations, { recipient: "", amount: 0, draftId: createId("allocation") }] } : current);
   const removeAllocation = (index: number) => setDraft((current) => current && current.allocations.length > 1 ? { ...current, allocations: current.allocations.filter((_, allocationIndex) => allocationIndex !== index) } : current);
 
   const save = async () => {
@@ -143,25 +148,41 @@ function LegacyOfferingsPage() {
     }
   };
 
+  const handleArchive = async () => {
+    if (!archiveId) return;
+    setArchiveLoading(true);
+    try {
+      await archiveOffering(archiveId);
+      setArchiveId(null);
+      pushToast({ tone: "success", title: "Payment type archived", message: "It is hidden from active lists and the public payment form." });
+    } catch (error) {
+      pushToast({ tone: "error", title: "Could not archive payment type", message: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setArchiveLoading(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-[1280px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
          <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Payment catalog</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payment types</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Create payment types, choose who can pay, and optionally accept Pay Later reservations.</p></div>
         <Button onClick={() => setDraft(emptyDraft())}><Plus className="h-4 w-4" /> Add payment</Button>
       </div>
-       <section className="grid gap-4 sm:grid-cols-3"><CatalogStat label="Total types" value={data.offerings.length} icon={Layers3} /><CatalogStat label="Active types" value={data.offerings.filter((offering) => offering.active).length} icon={Check} /><CatalogStat label="Allocation rules" value={data.offerings.reduce((total, offering) => total + offering.allocations.length, 0)} icon={Coins} /></section>
-        {data.offerings.length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.offerings.map((offering, index) => <PaymentTypeCard key={offering.id} offering={offering} index={index} onEdit={() => setDraft({ ...offering })} />)}</div> : <Card className="p-10 text-center"><p className="text-sm font-bold text-navy-900">No payment types yet</p><p className="mt-2 text-xs text-slate-500">Add the first payment type to make it available on the public form.</p></Card>}
+       <section className="grid gap-4 sm:grid-cols-3"><CatalogStat label="Total types" value={data.offerings.filter((offering) => !offering.archivedAt).length} icon={Layers3} /><CatalogStat label="Active types" value={data.offerings.filter((offering) => offering.active && !offering.archivedAt).length} icon={Check} /><CatalogStat label="Allocation rules" value={data.offerings.filter((offering) => !offering.archivedAt).reduce((total, offering) => total + offering.allocations.length, 0)} icon={Coins} /></section>
+         {data.offerings.filter((offering) => !offering.archivedAt).length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.offerings.filter((offering) => !offering.archivedAt).map((offering, index) => <div key={offering.id} className="relative"><PaymentTypeCard offering={offering} index={index} onEdit={() => setDraft(toOfferingDraft(offering))} /><button type="button" className="absolute bottom-5 left-5 rounded-lg px-2 py-1 text-[10px] font-bold text-white/60 transition hover:bg-white/10 hover:text-white" onClick={() => setArchiveId(offering.id)}>Archive</button></div>)}</div> : <Card className="p-10 text-center"><p className="text-sm font-bold text-navy-900">No payment types yet</p><p className="mt-2 text-xs text-slate-500">Add the first payment type to make it available on the public form.</p></Card>}
        <Dialog open={Boolean(draft)} onClose={() => setDraft(null)} title={draft?.id ? "Edit payment type" : "Add payment type"} description="Set the amount, availability, Pay Later deadline, and allocation destinations." size="xl">
-        {draft ? <OfferingForm draft={draft} updateDraft={updateDraft} updateAmount={updateAmount} updateAllocation={updateAllocation} addAllocation={addAllocation} removeAllocation={removeAllocation} toggleAvailability={toggleAvailability} toggleSchoolLevel={toggleSchoolLevel} togglePayLater={togglePayLater} onCancel={() => setDraft(null)} onSave={save} saving={saving} /> : null}
-      </Dialog>
-    </div>
+         {draft ? <OfferingForm draft={draft} updateDraft={updateDraft} updateAmount={updateAmount} updateAllocation={updateAllocation} addAllocation={addAllocation} removeAllocation={removeAllocation} toggleAvailability={toggleAvailability} toggleSchoolLevel={toggleSchoolLevel} togglePayLater={togglePayLater} onCancel={() => setDraft(null)} onSave={save} saving={saving} /> : null}
+       </Dialog>
+       <ConfirmDialog open={Boolean(archiveId)} onClose={() => setArchiveId(null)} onConfirm={() => void handleArchive()} title="Archive payment type?" description="This hides the payment type from active admin lists and the public payment form. Existing payment records remain unchanged." confirmLabel="Archive payment type" danger loading={archiveLoading} />
+     </div>
   );
 }
 
 export function OfferingsPage() {
   const { data } = useApp();
-  const exportTypes = () => downloadCsv(`jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`, ["Type", "Slug", "Description", "Amount", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"], data.offerings.map((offering) => [offering.name, offering.slug, offering.description, offering.amount, offering.active ? "Yes" : "No", offering.availableMethods.join(" | "), offering.payLaterMethods.join(" | "), offering.applicableSchoolLevels.join(" | "), offering.payLaterDeadlineAt]));
-  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportTypes} disabled={!data.offerings.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><LegacyOfferingsPage /></div>;
+  const activeOfferings = data.offerings.filter((offering) => !offering.archivedAt);
+  const exportTypes = () => downloadCsv(`jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`, ["Type", "Slug", "Description", "Amount", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"], activeOfferings.map((offering) => [offering.name, offering.slug, offering.description, offering.amount, offering.active ? "Yes" : "No", offering.availableMethods.join(" | "), offering.payLaterMethods.join(" | "), offering.applicableSchoolLevels.join(" | "), offering.payLaterDeadlineAt]));
+  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportTypes} disabled={!activeOfferings.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><LegacyOfferingsPage /></div>;
 }
 
 function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<EditableAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
@@ -181,7 +202,7 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
         <div className="mt-4 flex min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.payLaterMethods.includes(method)} disabled={!draft.availableMethods.includes(method)} onClick={() => togglePayLater(method)} />)}</div>
         {draft.payLaterMethods.length ? <div className="mt-4 max-w-sm"><FieldLabel required>Pay Later deadline (Asia/Manila)</FieldLabel><Input type="datetime-local" value={toLocalDateTimeInput(draft.payLaterDeadlineAt)} onChange={(event) => updateDraft("payLaterDeadlineAt", event.target.value ? new Date(event.target.value).toISOString() : undefined)} /><p className="mt-1.5 text-[11px] text-navy-700">Reservations remain visible as overdue after this time; admins can still mark them paid.</p></div> : <p className="mt-3 text-[11px] text-navy-700">Enable at least one method to show the deadline input.</p>}
       </div>
-      <div className="rounded-2xl border border-line bg-mist p-4"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><FieldLabel required>Allocation destinations</FieldLabel><p className="text-xs leading-5 text-slate-500">Use peso amounts. The total must equal {formatCurrency(draft.amount || 0)}.</p></div><Button type="button" size="sm" variant="outline" onClick={addAllocation}><Plus className="h-3.5 w-3.5" /> Add destination</Button></div><div className="mt-4 space-y-3">{draft.allocations.map((allocation, index) => <div key={`${index}-${allocation.recipient}`} className="flex flex-col gap-2 sm:flex-row"><Input className="min-w-0 flex-1" value={allocation.recipient} onChange={(event) => updateAllocation(index, { recipient: event.target.value })} placeholder="Recipient, e.g. JPCS" aria-label={`Allocation recipient ${index + 1}`} /><div className="flex gap-2 sm:w-44"><Input className="min-w-0 flex-1" type="number" min="0.01" step="0.01" value={allocation.amount} onChange={(event) => updateAllocation(index, { amount: Number(event.target.value) })} aria-label={`Allocation amount ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => removeAllocation(index)} disabled={draft.allocations.length === 1} aria-label={`Remove allocation ${index + 1}`}><Trash2 className="h-4 w-4" /></button></div></div>)}</div><div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs"><span className="font-semibold text-slate-500">Allocation total</span><span className={`font-extrabold ${Math.round(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0) * 100) === Math.round(draft.amount * 100) ? "text-mint" : "text-coral"}`}>{formatCurrency(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0))}</span></div></div>
+       <div className="rounded-2xl border border-line bg-mist p-4"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><FieldLabel required>Allocation destinations</FieldLabel><p className="text-xs leading-5 text-slate-500">Use peso amounts. The total must equal {formatCurrency(draft.amount || 0)}.</p></div><Button type="button" size="sm" variant="outline" onClick={addAllocation}><Plus className="h-3.5 w-3.5" /> Add destination</Button></div><div className="mt-4 space-y-3">{draft.allocations.map((allocation, index) => <div key={allocation.draftId} className="flex min-w-0 flex-col gap-2 sm:flex-row"><Input className="min-w-0 flex-1" value={allocation.recipient} onChange={(event) => updateAllocation(index, { recipient: event.target.value })} placeholder="Recipient, e.g. JPCS" aria-label={`Allocation recipient ${index + 1}`} /><div className="flex min-w-0 gap-2 sm:w-44"><Input className="min-w-0 flex-1" type="number" min="0.01" step="0.01" value={allocation.amount} onChange={(event) => updateAllocation(index, { amount: Number(event.target.value) })} aria-label={`Allocation amount ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => removeAllocation(index)} disabled={draft.allocations.length === 1} aria-label={`Remove allocation ${index + 1}`}><Trash2 className="h-4 w-4" /></button></div></div>)}</div><div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs"><span className="font-semibold text-slate-500">Allocation total</span><span className={`font-extrabold ${Math.round(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0) * 100) === Math.round(draft.amount * 100) ? "text-mint" : "text-coral"}`}>{formatCurrency(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0))}</span></div></div>
        <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button><Button type="button" loading={saving} onClick={onSave}><Save className="h-4 w-4" /> Save payment type</Button></div>
     </div>
   );
