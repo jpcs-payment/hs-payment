@@ -1,17 +1,18 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Mail, Search, UsersRound, WalletCards } from "lucide-react";
+import { ChevronRight, Download, Mail, Search, UsersRound, WalletCards } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { EmptyState } from "../../components/EmptyState";
 import { StatusBadge } from "../../components/StatusBadge";
 import { Avatar, Button, Card, Dialog, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
+import { downloadCsv } from "../../lib/export";
 import { getLatestPayment } from "../../data/seed";
 import type { PaymentRecord, SchoolLevel, Student } from "../../types";
 
 const levelFilters: Array<"All levels" | SchoolLevel> = ["All levels", "Junior High School", "Senior High School", "College"];
 
-export function PayersPage() {
+function LegacyPayersPage() {
   const { data } = useApp();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -24,6 +25,12 @@ export function PayersPage() {
   const selectedStudent = selectedId ? data.students.find((student) => student.id === selectedId) ?? null : null;
 
   return <div className="mx-auto max-w-[1400px] space-y-6"><div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">People & accounts</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payers</h2><p className="mt-2 text-sm leading-6 text-slate-500">Search payer details and inspect their payment history.</p></div><div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800"><UsersRound className="h-4 w-4" />{data.students.length} payer records</div></div><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><AdminStat label="Total payers" value={String(data.students.length)} detail="Recorded payer details" /><AdminStat label="With payment records" value={String(studentsWithPayments)} detail="Have submitted at least once" /><AdminStat label="Confirmed payers" value={String(approvedPayers)} detail="Have a released ticket" /><AdminStat label="Awaiting review" value={String(pendingPayers)} detail="Need admin attention" /></section><Card className="p-4 sm:p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="relative w-full lg:max-w-md"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, email, year, strand, or course" /></div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Filter</span><Select className="w-auto min-w-[180px]" value={level} onChange={(event) => setLevel(event.target.value as typeof level)}>{levelFilters.map((item) => <option key={item}>{item}</option>)}</Select></div></div></Card>{filteredStudents.length > 0 ? <Card className="overflow-hidden"><div className="hidden grid-cols-[minmax(0,1.6fr)_180px_150px_120px_110px] gap-4 border-b border-line bg-slate-50/70 px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400 md:grid md:px-6"><span>Student</span><span>School details</span><span>Payment count</span><span>Latest status</span><span /></div><div className="divide-y divide-line">{filteredStudents.map((student) => <PayerRow key={student.id} student={student} payments={data.payments.filter((payment) => payment.studentId === student.id)} onView={() => setSelectedId(student.id)} />)}</div></Card> : <EmptyState icon={Search} title="No payers found" description="Try a different search term or school-level filter." />}<Dialog open={Boolean(selectedStudent)} onClose={() => setSelectedId(null)} title={selectedStudent ? selectedStudent.name : "Payer details"} description={selectedStudent ? `${selectedStudent.email} · payer profile` : undefined} size="lg">{selectedStudent ? <PayerDetails student={selectedStudent} payments={data.payments.filter((payment) => payment.studentId === selectedStudent.id)} onViewPayments={() => navigate(`/admin/payments?student=${selectedStudent.id}`)} /> : null}</Dialog></div>;
+}
+
+export function PayersPage() {
+  const { data } = useApp();
+  const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"], data.students.map((student) => { const payments = data.payments.filter((payment) => payment.studentId === student.id); return [student.name, student.email, student.schoolLevel, student.yearLevel, student.strand, student.course, payments.length, payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0)]; }));
+  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportPayers} disabled={!data.students.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><LegacyPayersPage /></div>;
 }
 
 function PayerRow({ student, payments, onView }: { student: Student; payments: PaymentRecord[]; onView: () => void }) {

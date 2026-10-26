@@ -10,6 +10,7 @@ const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage").then((module)
 const PayersPage = lazy(() => import("./pages/admin/PayersPage").then((module) => ({ default: module.PayersPage })));
 const PaymentsPage = lazy(() => import("./pages/admin/PaymentsPage").then((module) => ({ default: module.PaymentsPage })));
 const OfferingsPage = lazy(() => import("./pages/admin/OfferingsPage").then((module) => ({ default: module.OfferingsPage })));
+const ReportsPage = lazy(() => import("./pages/admin/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const PaymentMethodsPage = lazy(() => import("./pages/admin/PaymentMethodsPage").then((module) => ({ default: module.PaymentMethodsPage })));
 const AttendancePage = lazy(() => import("./pages/admin/AttendancePage").then((module) => ({ default: module.AttendancePage })));
 
@@ -41,6 +42,7 @@ export function App() {
               <Route path="/admin/payers" element={<PayersPage />} />
               <Route path="/admin/payments" element={<PaymentsPage />} />
               <Route path="/admin/offerings" element={<OfferingsPage />} />
+              <Route path="/admin/reports" element={<ReportsPage />} />
               <Route path="/admin/methods" element={<PaymentMethodsPage />} />
               <Route path="/admin/attendance" element={<AttendancePage />} />
             </Route>

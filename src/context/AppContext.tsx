@@ -269,8 +269,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const submitPayment = async (input: NewPaymentInput) => {
     const client = requireSupabase();
     const offering = data.offerings.find((item) => item.id === input.offeringId && item.active);
-    if (!offering) throw new Error("The Film Showing offering is not available.");
-    if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment offering is not available for the selected school level.");
+    if (!offering) throw new Error("The Film Showing payment type is not available.");
+    if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
     if (!offering.availableMethods.includes(input.method)) throw new Error("That payment method is not available.");
     if (input.paymentMode === "PayLater") {
       if (!offering.payLaterMethods.includes(input.method)) throw new Error("Pay Later is not enabled for this payment method.");
@@ -520,20 +520,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const client = requireSupabase();
     const scannedValue = value.trim();
     const payment = data.payments.find((item) => item.ticketId && (scannedValue === item.ticketId || scannedValue === item.ticketQrValue));
-    if (!payment) return { ok: false, kind: "invalid", message: "This QR code does not match an approved JPCS ticket." };
-    if (payment.paymentMode === "PayLater" && payment.paymentState !== "Paid") return { ok: false, kind: "unpaid", payment };
-    if (payment.status !== "Approved") return { ok: false, kind: "invalid", message: "This QR code is not active yet. An admin must confirm the payment first." };
-    if (payment.attendedAt) return { ok: false, kind: "already-checked-in", payment };
+    if (!payment) return { ok: false, kind: "invalid", message: "This QR code does not match an active JPCS ticket or Pay Later reservation." };
+    const paymentPending = payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid" && payment.status === "Pending";
+    if (payment.status !== "Approved" && !paymentPending) return { ok: false, kind: "invalid", message: "This QR code is not active yet. An admin must approve the payment or reservation first." };
+    if (payment.attendedAt) return { ok: false, kind: "already-checked-in", payment, paymentPending };
     const attendedAt = new Date().toISOString();
     const { data: updated, error } = await client.from("hs-payments").update({ attended_at: attendedAt }).eq("id", payment.id).is("attended_at", null).select("attended_at").maybeSingle();
     if (error) throw error;
     if (!updated) {
       const { data: existing } = await client.from("hs-payments").select("attended_at").eq("id", payment.id).single();
-      return { ok: false, kind: "already-checked-in", payment: { ...payment, attendedAt: existing?.attended_at ?? attendedAt } };
+      return { ok: false, kind: "already-checked-in", payment: { ...payment, attendedAt: existing?.attended_at ?? attendedAt }, paymentPending };
     }
     const checkedInPayment = { ...payment, attendedAt };
     setData((current) => ({ ...current, payments: current.payments.map((item) => item.id === payment.id ? checkedInPayment : item) }));
-    return { ok: true, kind: "checked-in", payment: checkedInPayment };
+    return { ok: true, kind: "checked-in", payment: checkedInPayment, paymentPending };
   };
 
   const createOffering = async (input: NewPaymentOfferingInput) => {

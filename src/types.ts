@@ -149,7 +149,7 @@ export interface NewPaymentOfferingInput {
 }
 
 export type TicketCheckInResult =
-  | { ok: true; kind: "checked-in"; payment: PaymentRecord }
-  | { ok: false; kind: "already-checked-in"; payment: PaymentRecord }
+  | { ok: true; kind: "checked-in"; payment: PaymentRecord; paymentPending?: boolean }
+  | { ok: false; kind: "already-checked-in"; payment: PaymentRecord; paymentPending?: boolean }
   | { ok: false; kind: "unpaid"; payment: PaymentRecord }
   | { ok: false; kind: "invalid"; message: string };

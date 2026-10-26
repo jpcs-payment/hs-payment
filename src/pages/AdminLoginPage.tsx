@@ -6,7 +6,7 @@ import { OrganizationLogo } from "../components/OrganizationLogo";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../components/Toast";
 
-const workspaceBenefits = ["Review and approve payment submissions", "Activate attendance tickets after confirmation", "Manage offerings, methods, and event check-in"];
+const workspaceBenefits = ["Review and approve payment submissions", "Activate attendance tickets after confirmation", "Manage payment types, methods, and event check-in"];
 
 export function AdminLoginPage() {
   const { session, signInAdmin } = useApp();

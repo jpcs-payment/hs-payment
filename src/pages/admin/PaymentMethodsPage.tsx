@@ -1,16 +1,17 @@
 import { useState, type ChangeEvent } from "react";
-import { Banknote, Check, ImagePlus, Info, QrCode, Save, Settings2, ToggleLeft, ToggleRight, WalletCards, X } from "lucide-react";
+import { Banknote, Check, Download, ImagePlus, Info, QrCode, Save, Settings2, ToggleLeft, ToggleRight, WalletCards, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Card, Button, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { formatCurrency, methodAccent } from "../../lib/utils";
 import { paymentMethodLogos } from "../../lib/paymentMethods";
+import { downloadCsv } from "../../lib/export";
 import type { PaymentMethodConfig } from "../../types";
 
 const methods = ["Cash", "GCash", "MariBank"] as const;
 
-export function PaymentMethodsPage() {
+function LegacyPaymentMethodsPage() {
   const { data, savePaymentMethod } = useApp();
   const { pushToast } = useToast();
   const [methodDraft, setMethodDraft] = useState<PaymentMethodConfig | null>(null);
@@ -46,6 +47,50 @@ export function PaymentMethodsPage() {
   };
 
   return <div className="mx-auto max-w-[1250px] space-y-6"><div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Collection settings</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payment methods</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Configure the payment instructions shown across every active payment offering.</p></div><div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-navy-800"><Info className="h-4 w-4" />Changes apply immediately</div></div><Card className="overflow-hidden"><div className="flex flex-col justify-between gap-4 border-b border-line bg-navy-900 px-5 py-5 text-white sm:flex-row sm:items-center sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Active payment offerings</p><h3 className="mt-2 text-xl font-extrabold">{activeOfferings.length ? `${activeOfferings.length} offering${activeOfferings.length === 1 ? "" : "s"} configured` : "No active offering"}</h3><p className="mt-1 text-xs text-blue-100/70">{offering?.name ?? "Add a payment offering before collecting payments."}</p></div><p className="text-2xl font-extrabold">{formatCurrency(offering?.amount ?? 0)}</p></div><div className="flex flex-wrap gap-2 border-b border-line px-5 py-4 sm:px-6">{activeOfferings.map((item) => <span key={item.id} className="rounded-full bg-navy-50 px-3 py-1.5 text-[10px] font-bold text-navy-700">{item.name} · {formatCurrency(item.amount)}</span>)}</div><div className="grid gap-4 p-5 sm:p-6 md:grid-cols-3">{methods.map((method) => { const config = data.paymentMethods.find((item) => item.id === method); return config ? <MethodCard key={method} config={config} onEdit={() => setMethodDraft({ ...config })} onToggle={() => void toggleMethod(config)} /> : null; })}</div></Card><div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800"><Info className="mt-0.5 h-4 w-4 shrink-0" /><p><strong>Public proof notice:</strong> uploaded payment proof is stored in a public Supabase bucket for transaction tracking. Do not upload unrelated personal documents.</p></div><Dialog open={Boolean(methodDraft)} onClose={() => setMethodDraft(null)} title={methodDraft ? `Configure ${methodDraft.id}` : "Configure payment method"} description="These details appear beside the payment method card." size="md">{methodDraft ? <MethodForm draft={methodDraft} setDraft={setMethodDraft} onCancel={() => setMethodDraft(null)} onSave={saveDraft} loading={loading} /> : null}</Dialog></div>;
+}
+
+function PaymentMethodsContent() {
+  const { data, savePaymentMethod } = useApp();
+  const { pushToast } = useToast();
+  const [methodDraft, setMethodDraft] = useState<PaymentMethodConfig | null>(null);
+  const [loading, setLoading] = useState(false);
+  const activeTypes = data.offerings.filter((item) => item.active);
+  const type = activeTypes[0];
+
+  const toggleMethod = async (method: PaymentMethodConfig) => {
+    try {
+      await savePaymentMethod({ ...method, enabled: !method.enabled });
+      pushToast({ tone: "success", title: `${method.id} ${method.enabled ? "disabled" : "enabled"}`, message: "The public payment form has been updated." });
+    } catch (error) {
+      pushToast({ tone: "error", title: "Could not update method", message: error instanceof Error ? error.message : "Try again." });
+    }
+  };
+
+  const saveDraft = async () => {
+    if (!methodDraft) return;
+    if (!methodDraft.accountName.trim() || !methodDraft.accountNumber.trim() || !methodDraft.instructions.trim()) {
+      pushToast({ tone: "error", title: "Complete the method details", message: "Account name, reference, and instructions are required." });
+      return;
+    }
+    setLoading(true);
+    try {
+      await savePaymentMethod({ ...methodDraft, accountName: methodDraft.accountName.trim(), accountNumber: methodDraft.accountNumber.trim(), instructions: methodDraft.instructions.trim() });
+      setMethodDraft(null);
+      pushToast({ tone: "success", title: `${methodDraft.id} saved`, message: "The public form is using the updated details." });
+    } catch (error) {
+      pushToast({ tone: "error", title: "Could not save method", message: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <div className="mx-auto max-w-[1250px] space-y-6"><div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Collection settings</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payment methods</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Configure the payment instructions shown across every active payment type.</p></div><div className="flex items-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-[11px] font-semibold text-navy-800"><Info className="h-4 w-4" />Changes apply immediately</div></div><Card className="overflow-hidden"><div className="flex flex-col justify-between gap-4 border-b border-line bg-navy-900 px-5 py-5 text-white sm:flex-row sm:items-center sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Active payment types</p><h3 className="mt-2 text-xl font-extrabold">{activeTypes.length ? `${activeTypes.length} type${activeTypes.length === 1 ? "" : "s"} configured` : "No active payment type"}</h3><p className="mt-1 text-xs text-blue-100/70">{type?.name ?? "Add a payment type before collecting payments."}</p></div><p className="text-2xl font-extrabold">{formatCurrency(type?.amount ?? 0)}</p></div><div className="flex flex-wrap gap-2 border-b border-line px-5 py-4 sm:px-6">{activeTypes.map((item) => <span key={item.id} className="rounded-full bg-navy-50 px-3 py-1.5 text-[10px] font-bold text-navy-700">{item.name} · {formatCurrency(item.amount)}</span>)}</div><div className="grid gap-4 p-5 sm:p-6 md:grid-cols-3">{methods.map((method) => { const config = data.paymentMethods.find((item) => item.id === method); return config ? <MethodCard key={method} config={config} onEdit={() => setMethodDraft({ ...config })} onToggle={() => void toggleMethod(config)} /> : null; })}</div></Card><Dialog open={Boolean(methodDraft)} onClose={() => setMethodDraft(null)} title={methodDraft ? `Configure ${methodDraft.id}` : "Configure payment method"} description="These instructions appear on the public payment form.">{methodDraft ? <MethodForm draft={methodDraft} setDraft={setMethodDraft} onCancel={() => setMethodDraft(null)} onSave={saveDraft} loading={loading} /> : null}</Dialog></div>;
+}
+
+export function PaymentMethodsPage() {
+  const { data } = useApp();
+  const exportMethods = () => downloadCsv(`jpcs-payment-methods-${new Date().toISOString().slice(0, 10)}.csv`, ["Method", "Enabled", "Account name", "Account number / reference", "Instructions", "QR configured"], data.paymentMethods.map((method) => [method.id, method.enabled ? "Yes" : "No", method.accountName, method.accountNumber, method.instructions, method.qrImage ? "Yes" : "No"]));
+  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportMethods} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><PaymentMethodsContent /></div>;
 }
 
 function MethodCard({ config, onEdit, onToggle }: { config: PaymentMethodConfig; onEdit: () => void; onToggle: () => void }) {
