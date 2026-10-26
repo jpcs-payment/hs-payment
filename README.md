@@ -11,6 +11,8 @@ npm run dev
 
 The root route is the public Film Showing payment form. The local admin route is `/admin/login`.
 
+On Vercel, open `/admin/login` after deploying. The included `vercel.json` rewrite keeps React Router routes working when opened directly.
+
 `npm run dev` starts Vite and the local Brevo bridge at `http://127.0.0.1:8787`. Brevo credentials are read only by `server/email-server.mjs`.
 
 ## Environment
