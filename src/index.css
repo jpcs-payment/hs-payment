@@ -28,6 +28,14 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+.payment-form .flex-nowrap {
+  flex-wrap: wrap;
+}
+
+.payment-form .overflow-x-auto {
+  overflow-x: visible;
+}
+
 button,
 input,
 select,

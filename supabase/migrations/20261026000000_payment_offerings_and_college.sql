@@ -19,6 +19,7 @@ alter table public."hs-payments"
   add column if not exists approved_by_email text;
 
 alter table public."hs-payers"
+  drop constraint if exists "hs-payers_school_level_check",
   drop constraint if exists hs_payers_school_level_check;
 
 alter table public."hs-payers"

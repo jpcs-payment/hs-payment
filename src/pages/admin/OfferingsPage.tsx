@@ -9,7 +9,9 @@ import type { NewPaymentOfferingInput, PaymentAllocation, PaymentMethod, Payment
 const methods: PaymentMethod[] = ["Cash", "GCash", "MariBank"];
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 
-type OfferingDraft = NewPaymentOfferingInput & { id?: string };
+type EditableAmount = number;
+type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount };
+type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[] };
 
 const emptyDraft = (): OfferingDraft => ({
   slug: "",
@@ -67,12 +69,17 @@ export function OfferingsPage() {
     });
   };
 
-  const updateAmount = (value: string) => {
+  const parseEditableAmount = (value: string): EditableAmount => {
+    if (value === "") return Number.NaN;
     const amount = Number(value);
-    setDraft((current) => current ? { ...current, amount: Number.isFinite(amount) ? amount : 0 } : current);
+    return Number.isFinite(amount) ? amount : Number.NaN;
   };
 
-  const updateAllocation = (index: number, value: Partial<PaymentAllocation>) => {
+  const updateAmount = (value: string) => {
+    setDraft((current) => current ? { ...current, amount: parseEditableAmount(value) } : current);
+  };
+
+  const updateAllocation = (index: number, value: Partial<EditableAllocation>) => {
     setDraft((current) => current ? { ...current, allocations: current.allocations.map((allocation, allocationIndex) => allocationIndex === index ? { ...allocation, ...value } : allocation) } : current);
   };
 
@@ -81,6 +88,7 @@ export function OfferingsPage() {
 
   const save = async () => {
     if (!draft) return;
+    const amount = Number(draft.amount);
     const cleanAllocations = draft.allocations.map((allocation) => ({ recipient: allocation.recipient.trim(), amount: Number(allocation.amount) }));
     const allocationTotal = cleanAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
     const slug = draft.slug.trim().toLowerCase().replace(/\s+/g, "-");
@@ -89,7 +97,7 @@ export function OfferingsPage() {
       pushToast({ tone: "error", title: "Complete the offering details", message: "Name, slug, and description are required." });
       return;
     }
-    if (!Number.isFinite(draft.amount) || draft.amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       pushToast({ tone: "error", title: "Invalid amount", message: "The amount must be greater than zero." });
       return;
     }
@@ -115,14 +123,14 @@ export function OfferingsPage() {
       pushToast({ tone: "error", title: "Duplicate destinations", message: "Use each allocation recipient only once." });
       return;
     }
-    if (Math.round(allocationTotal * 100) !== Math.round(draft.amount * 100)) {
-      pushToast({ tone: "error", title: "Allocation total does not match", message: `Allocations total ${formatCurrency(allocationTotal)} but the offering is ${formatCurrency(draft.amount)}.` });
+    if (Math.round(allocationTotal * 100) !== Math.round(amount * 100)) {
+      pushToast({ tone: "error", title: "Allocation total does not match", message: `Allocations total ${formatCurrency(allocationTotal)} but the offering is ${formatCurrency(amount)}.` });
       return;
     }
 
     setSaving(true);
     try {
-      const input: OfferingDraft = { ...draft, slug, name: draft.name.trim(), description: draft.description.trim(), allocations: cleanAllocations, payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined };
+      const input = { ...draft, slug, name: draft.name.trim(), description: draft.description.trim(), amount, allocations: cleanAllocations, payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined };
       if (draft.id) await saveOffering(input as PaymentOffering);
       else await createOffering(input);
       setDraft(null);
@@ -149,7 +157,7 @@ export function OfferingsPage() {
   );
 }
 
-function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<PaymentAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
+function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<EditableAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2">

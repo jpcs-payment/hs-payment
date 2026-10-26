@@ -1,4 +1,4 @@
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes, type ChangeEvent, type ReactNode } from "react";
 import { Check, Loader2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -151,8 +151,21 @@ export function FieldLabel({ children, required = false }: { children: ReactNode
   return <label className="mb-1.5 block text-xs font-bold uppercase tracking-[0.08em] text-slate-500">{children}{required ? <span className="ml-1 text-coral">*</span> : null}</label>;
 }
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={cn("h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-navy-700 focus:ring-2 focus:ring-navy-700/10", className)} {...props} />;
+export function Input({ className, onChange, type, value, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+  const isNumberInput = type === "number";
+  const [showEmptyNumber, setShowEmptyNumber] = useState(false);
+
+  useEffect(() => {
+    const numericValue = Number(value);
+    if (isNumberInput && showEmptyNumber && Number.isFinite(numericValue) && numericValue !== 0) setShowEmptyNumber(false);
+  }, [isNumberInput, showEmptyNumber, value]);
+
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (isNumberInput) setShowEmptyNumber(event.target.value === "");
+    onChange?.(event);
+  };
+
+  return <input className={cn("h-11 w-full rounded-xl border border-line bg-white px-3.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-navy-700 focus:ring-2 focus:ring-navy-700/10", className)} type={type} value={isNumberInput && showEmptyNumber ? "" : value} onChange={handleChange} {...props} />;
 }
 
 export function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {

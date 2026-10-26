@@ -6,7 +6,7 @@ import { BRANDING } from "../lib/branding";
 
 export function PublicShell({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-mist text-ink">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-mist text-ink">
       <header className="border-b border-line bg-white/90 backdrop-blur">
         <div className="mx-auto flex min-h-[78px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <OrganizationLogo surface="light" />

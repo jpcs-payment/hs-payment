@@ -78,6 +78,7 @@ set payment_mode = 'PayNow',
 where payment_mode = 'PayNow';
 
 alter table public."hs-payers"
+  drop constraint if exists "hs-payers_school_level_check",
   drop constraint if exists hs_payers_school_level_check;
 
 alter table public."hs-payers"
