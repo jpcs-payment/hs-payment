@@ -11,6 +11,7 @@ alter table public."hs-payers"
 alter table public."hs-payments"
   add column if not exists school_level text,
   add column if not exists year_level text,
+  add column if not exists strand text,
   add column if not exists course text,
   add column if not exists allocations jsonb not null default '[]'::jsonb,
   add column if not exists approved_by_admin_id uuid references public."hs-admins"(id) on delete set null,

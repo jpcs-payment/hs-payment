@@ -23,6 +23,13 @@ export const formatDateTime = (value: string | Date) =>
     minute: "2-digit",
   }).format(new Date(value));
 
+export const formatManilaDateTime = (value: string | Date) =>
+  new Intl.DateTimeFormat("en-PH", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Manila",
+  }).format(new Date(value));
+
 export const formatTime = (value: string | Date) =>
   new Intl.DateTimeFormat("en-PH", {
     hour: "numeric",
@@ -66,3 +73,5 @@ export const initials = (name: string) =>
     .toUpperCase();
 
 export const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
+
+export const isOverdue = (deadline?: string, now = Date.now()) => Boolean(deadline && new Date(deadline).getTime() < now);

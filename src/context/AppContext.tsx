@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { cloneInitialData } from "../data/seed";
 import { createTicketQrValue } from "../lib/branding";
-import { sendApprovalEmail as deliverApprovalEmail } from "../lib/email";
+import { sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
 import { initials, createReference } from "../lib/utils";
 import { requireSupabase, supabase } from "../lib/supabase";
 import type {
@@ -29,6 +29,8 @@ interface AppContextValue {
   approvePayment: (paymentId: string) => Promise<PaymentRecord | undefined>;
   rejectPayment: (paymentId: string, reason: string) => Promise<PaymentRecord | undefined>;
   sendApprovalEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
+  sendPayLaterEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
+  markPayLaterReceived: (paymentId: string) => Promise<PaymentRecord | undefined>;
   checkInTicket: (value: string) => Promise<TicketCheckInResult>;
   createOffering: (input: NewPaymentOfferingInput) => Promise<PaymentOffering>;
   saveOffering: (offering: PaymentOffering) => Promise<void>;
@@ -84,6 +86,8 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     availableMethods: Array.isArray(row.available_methods) ? row.available_methods : ["Cash", "GCash", "MariBank"],
     applicableSchoolLevels: configuredLevels.length ? configuredLevels : schoolLevels,
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
+    payLaterMethods: Array.isArray(row.pay_later_methods) ? row.pay_later_methods : [],
+    payLaterDeadlineAt: row.pay_later_deadline_at ?? undefined,
   };
 };
 
@@ -126,6 +130,9 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     amount,
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
     method: row.method,
+    paymentMode: row.payment_mode === "PayLater" ? "PayLater" : "PayNow",
+    paymentState: row.payment_state === "Paid" ? "Paid" : row.payment_state === "Unpaid" ? "Unpaid" : row.payment_state === "Rejected" ? "Rejected" : row.payment_state === "Cancelled" ? "Cancelled" : row.status === "Approved" ? "Paid" : row.status === "Rejected" ? "Rejected" : "AwaitingReview",
+    paymentDeadlineAt: row.payment_deadline_at ?? undefined,
     senderAccountName: row.sender_account_name ?? undefined,
     senderReference: row.sender_reference ?? undefined,
     proofImage: row.proof_url ?? undefined,
@@ -135,6 +142,9 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     approvedAt: row.approved_at ?? undefined,
     approvedByName: row.approved_by_name ?? undefined,
     approvedByEmail: row.approved_by_email ?? undefined,
+    paidAt: row.paid_at ?? undefined,
+    paidByName: row.paid_by_name ?? undefined,
+    paidByEmail: row.paid_by_email ?? undefined,
     receiptNumber: row.receipt_number ?? undefined,
     ticketId: row.ticket_id ?? undefined,
     ticketQrValue: row.ticket_qr_value ?? undefined,
@@ -201,7 +211,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const email = authData.session?.user.email;
     if (!email) return null;
     const { data: admin, error } = await client.from("hs-admins").select("email, display_name").eq("email", email).maybeSingle();
-    if (error || !admin) return null;
+    if (error) throw error;
+    if (!admin) return null;
     return { email: String(admin.email), name: String(admin.display_name ?? admin.email) };
   };
 
@@ -261,13 +272,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!offering) throw new Error("The Film Showing offering is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment offering is not available for the selected school level.");
     if (!offering.availableMethods.includes(input.method)) throw new Error("That payment method is not available.");
+    if (input.paymentMode === "PayLater") {
+      if (!offering.payLaterMethods.includes(input.method)) throw new Error("Pay Later is not enabled for this payment method.");
+      if (!offering.payLaterDeadlineAt || new Date(offering.payLaterDeadlineAt).getTime() <= Date.now()) throw new Error("The Pay Later deadline has passed or is not configured.");
+    }
 
     const paymentId = createUuid();
     const payerId = createUuid();
+    const isPayLater = input.paymentMode === "PayLater";
+    const ticketId = isPayLater ? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}` : undefined;
+    const ticketQrValue = ticketId ? createTicketQrValue(ticketId) : undefined;
     let proofPath: string | undefined;
     let proofUrl: string | undefined;
 
-    if (input.proofImage) {
+    if (input.proofImage && !isPayLater) {
       const { blob, mime } = dataUrlToBlob(input.proofImage);
       const extension = mime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
       proofPath = `${paymentId}/${createUuid()}.${extension}`;
@@ -308,6 +326,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       offering_name: offering.name,
       amount: offering.amount,
       allocations: offering.allocations,
+      payment_mode: input.paymentMode,
+      payment_state: isPayLater ? "Unpaid" : "AwaitingReview",
+      payment_deadline_at: isPayLater ? offering.payLaterDeadlineAt : null,
       method: input.method,
       sender_account_name: input.senderAccountName ?? null,
       sender_reference: input.senderReference ?? null,
@@ -315,6 +336,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       proof_url: proofUrl ?? null,
       submitted_at: submittedAt,
       status: "Pending",
+      ticket_id: ticketId ?? null,
+      ticket_qr_value: ticketQrValue ?? null,
     });
     if (paymentError) throw paymentError;
 
@@ -329,6 +352,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       proofImage: proofUrl,
       submittedAt,
       status: "Pending",
+      paymentMode: input.paymentMode,
+      paymentState: isPayLater ? "Unpaid" : "AwaitingReview",
+      paymentDeadlineAt: isPayLater ? offering.payLaterDeadlineAt : undefined,
+      ticketId,
+      ticketQrValue,
     };
     setData((current) => ({ ...current, students: [payer, ...current.students], payments: [payment, ...current.payments] }));
     return payment;
@@ -353,6 +381,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const approvedPayment = {
       ...currentPayment,
       status: "Approved" as const,
+      paymentState: "Paid" as const,
+      paidAt: String(row.paid_at ?? row.approved_at ?? new Date().toISOString()),
+      paidByName: row.paid_by_name ?? row.approved_by_name ?? undefined,
+      paidByEmail: row.paid_by_email ?? row.approved_by_email ?? undefined,
       approvedAt: String(row.approved_at ?? new Date().toISOString()),
       approvedByName: row.approved_by_name ?? undefined,
       approvedByEmail: row.approved_by_email ?? undefined,
@@ -363,6 +395,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? approvedPayment : payment) }));
     return approvedPayment;
+  };
+
+  const markPayLaterReceived = async (paymentId: string) => {
+    const client = requireSupabase();
+    const currentPayment = data.payments.find((payment) => payment.id === paymentId);
+    if (!currentPayment) return undefined;
+    if (currentPayment.paymentMode !== "PayLater") throw new Error("Only Pay Later payments can use this action.");
+    if (currentPayment.status === "Approved" && currentPayment.paymentState === "Paid") return currentPayment;
+    const receiptNumber = currentPayment.receiptNumber ?? createReference("RCPT");
+    const ticketId = currentPayment.ticketId ?? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    const ticketQrValue = currentPayment.ticketQrValue ?? createTicketQrValue(ticketId);
+    const { data: updatedRow, error } = await client.rpc("hs_mark_pay_later_received", {
+      p_payment_id: paymentId,
+      p_receipt_number: receiptNumber,
+      p_ticket_id: ticketId,
+      p_ticket_qr_value: ticketQrValue,
+    });
+    if (error) throw error;
+    const row = ((Array.isArray(updatedRow) ? updatedRow[0] : updatedRow) ?? {}) as DbRow;
+    const paidPayment = {
+      ...currentPayment,
+      status: "Approved" as const,
+      paymentState: "Paid" as const,
+      paidAt: String(row.paid_at ?? new Date().toISOString()),
+      paidByName: row.paid_by_name ?? undefined,
+      paidByEmail: row.paid_by_email ?? undefined,
+      approvedAt: String(row.approved_at ?? new Date().toISOString()),
+      approvedByName: row.approved_by_name ?? undefined,
+      approvedByEmail: row.approved_by_email ?? undefined,
+      receiptNumber: String(row.receipt_number ?? receiptNumber),
+      ticketId: String(row.ticket_id ?? ticketId),
+      ticketQrValue: String(row.ticket_qr_value ?? ticketQrValue),
+      rejectionReason: undefined,
+    };
+    setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? paidPayment : payment) }));
+    return paidPayment;
   };
 
   const rejectPayment = async (paymentId: string, reason: string) => {
@@ -376,6 +444,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const rejectedPayment = {
       ...currentPayment,
       status: wasApproved ? "Approved" as const : "Rejected" as const,
+      paymentState: wasApproved ? "Paid" as const : currentPayment.paymentMode === "PayLater" ? "Unpaid" as const : "Rejected" as const,
       rejectionReason: wasApproved ? row.rejection_reason ?? currentPayment.rejectionReason : String(row.rejection_reason ?? reason),
       approvedAt: wasApproved ? row.approved_at ?? currentPayment.approvedAt : undefined,
       approvedByName: wasApproved ? row.approved_by_name ?? currentPayment.approvedByName : undefined,
@@ -411,7 +480,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const response = await deliverApprovalEmail(payment);
       const sentAt = new Date().toISOString();
       const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
-      return sent ?? { ...payment, emailDeliveryStatus: "Sent", emailSentAt: sentAt, emailId: response.emailId ?? undefined };
+      return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
     } catch (error) {
       const message = error instanceof Error ? error.message : "The approval email could not be sent.";
       await updateEmailState(payment.id, { email_delivery_status: "Failed", email_delivery_error: message });
@@ -419,11 +488,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const sendPayLaterEmail = async (payment: PaymentRecord) => {
+    if (payment.paymentMode !== "PayLater") return undefined;
+    // Public submissions cannot update the admin-only email audit fields, so delivery must not be blocked by that optional write.
+    try {
+      await updateEmailState(payment.id, { email_delivery_status: "Sending", email_delivery_error: null });
+    } catch {
+      // Continue with the email request for anonymous Pay Later submissions.
+    }
+    try {
+      const response = await deliverPayLaterEmail(payment);
+      const sentAt = new Date().toISOString();
+      try {
+        const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
+        return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
+      } catch {
+        return { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The Pay Later email could not be sent.";
+      try {
+        await updateEmailState(payment.id, { email_delivery_status: "Failed", email_delivery_error: message });
+      } catch {
+        // The delivery error is still surfaced to the student even if the audit write is unavailable.
+      }
+      throw error;
+    }
+  };
+
   const checkInTicket = async (value: string): Promise<TicketCheckInResult> => {
     const client = requireSupabase();
     const scannedValue = value.trim();
-    const payment = data.payments.find((item) => item.status === "Approved" && item.ticketId && (scannedValue === item.ticketId || scannedValue === item.ticketQrValue));
+    const payment = data.payments.find((item) => item.ticketId && (scannedValue === item.ticketId || scannedValue === item.ticketQrValue));
     if (!payment) return { ok: false, kind: "invalid", message: "This QR code does not match an approved JPCS ticket." };
+    if (payment.paymentMode === "PayLater" && payment.paymentState !== "Paid") return { ok: false, kind: "unpaid", payment };
+    if (payment.status !== "Approved") return { ok: false, kind: "invalid", message: "This QR code is not active yet. An admin must confirm the payment first." };
     if (payment.attendedAt) return { ok: false, kind: "already-checked-in", payment };
     const attendedAt = new Date().toISOString();
     const { data: updated, error } = await client.from("hs-payments").update({ attended_at: attendedAt }).eq("id", payment.id).is("attended_at", null).select("attended_at").maybeSingle();
@@ -448,6 +547,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       available_methods: input.availableMethods,
       applicable_school_levels: input.applicableSchoolLevels,
       allocations: input.allocations,
+      pay_later_methods: input.payLaterMethods,
+      pay_later_deadline_at: input.payLaterDeadlineAt ?? null,
     }).select("*").single();
     if (error) throw error;
     const offering = mapOffering(row);
@@ -466,6 +567,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       available_methods: offering.availableMethods,
       applicable_school_levels: offering.applicableSchoolLevels,
       allocations: offering.allocations,
+      pay_later_methods: offering.payLaterMethods,
+      pay_later_deadline_at: offering.payLaterDeadlineAt ?? null,
     }).eq("id", offering.id);
     if (error) throw error;
     setData((current) => ({ ...current, offerings: current.offerings.map((item) => item.id === offering.id ? offering : item) }));
@@ -490,7 +593,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, login, logout, signInAdmin, submitPayment, approvePayment, rejectPayment, sendApprovalEmail, checkInTicket, createOffering, saveOffering, savePaymentMethod, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, login, logout, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, createOffering, saveOffering, savePaymentMethod, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

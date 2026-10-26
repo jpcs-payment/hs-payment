@@ -6,6 +6,10 @@ export type PaymentMethod = "Cash" | "GCash" | "MariBank";
 
 export type PaymentStatus = "Pending" | "Approved" | "Rejected";
 
+export type PaymentMode = "PayNow" | "PayLater";
+
+export type PaymentState = "Unpaid" | "AwaitingReview" | "Paid" | "Rejected" | "Cancelled";
+
 export type EmailDeliveryStatus = "Sending" | "Sent" | "Failed";
 
 export interface PaymentAllocation {
@@ -43,6 +47,8 @@ export interface PaymentOffering {
   availableMethods: PaymentMethod[];
   applicableSchoolLevels: SchoolLevel[];
   allocations: PaymentAllocation[];
+  payLaterMethods: PaymentMethod[];
+  payLaterDeadlineAt?: string;
 }
 
 export interface PaymentRecord {
@@ -60,6 +66,9 @@ export interface PaymentRecord {
   amount: number;
   allocations: PaymentAllocation[];
   method: PaymentMethod;
+  paymentMode: PaymentMode;
+  paymentState: PaymentState;
+  paymentDeadlineAt?: string;
   senderAccountName?: string;
   senderReference?: string;
   proofImage?: string;
@@ -69,6 +78,9 @@ export interface PaymentRecord {
   approvedAt?: string;
   approvedByName?: string;
   approvedByEmail?: string;
+  paidAt?: string;
+  paidByName?: string;
+  paidByEmail?: string;
   receiptNumber?: string;
   ticketId?: string;
   ticketQrValue?: string;
@@ -116,6 +128,8 @@ export interface NewPaymentInput {
   amount: number;
   allocations: PaymentAllocation[];
   method: PaymentMethod;
+  paymentMode: PaymentMode;
+  paymentDeadlineAt?: string;
   senderAccountName?: string;
   senderReference?: string;
   proofImage?: string;
@@ -130,9 +144,12 @@ export interface NewPaymentOfferingInput {
   availableMethods: PaymentMethod[];
   applicableSchoolLevels: SchoolLevel[];
   allocations: PaymentAllocation[];
+  payLaterMethods: PaymentMethod[];
+  payLaterDeadlineAt?: string;
 }
 
 export type TicketCheckInResult =
   | { ok: true; kind: "checked-in"; payment: PaymentRecord }
   | { ok: false; kind: "already-checked-in"; payment: PaymentRecord }
+  | { ok: false; kind: "unpaid"; payment: PaymentRecord }
   | { ok: false; kind: "invalid"; message: string };
