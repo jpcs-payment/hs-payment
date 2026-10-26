@@ -1,14 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Coins, Download, Layers3, Plus, Save, Settings2, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
 import { Button, Card, ConfirmDialog, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
+import { Pagination } from "../../components/Pagination";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { createId, formatCurrency, formatManilaDateTime } from "../../lib/utils";
 import { downloadCsv } from "../../lib/export";
+import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { NewPaymentOfferingInput, PaymentAllocation, PaymentMethod, PaymentOffering, SchoolLevel } from "../../types";
 
 const methods: PaymentMethod[] = ["Cash", "GCash", "MariBank"];
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
+const PAGE_SIZE = 3;
 
 type EditableAmount = number;
 type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount; draftId: string };
@@ -45,17 +48,36 @@ function LegacyOfferingsPage() {
   const [saving, setSaving] = useState(false);
   const [archiveId, setArchiveId] = useState<string | null>(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [page, setPage] = useState(1);
+  const activeOfferings = data.offerings.filter((offering) => !offering.archivedAt);
+  const pageCount = getPageCount(activeOfferings.length, PAGE_SIZE);
+  const visibleOfferings = getPageItems(activeOfferings, page, PAGE_SIZE);
 
-  const updateDraft = <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => {
-    setDraft((current) => current ? { ...current, [key]: value } : current);
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+
+  const updateDraft = <K extends keyof OfferingDraft>(
+    key: K,
+    value: OfferingDraft[K],
+  ) => {
+    setDraft((current) => (current ? { ...current, [key]: value } : current));
   };
 
   const toggleAvailability = (method: PaymentMethod) => {
     setDraft((current) => {
       if (!current) return current;
       const enabled = current.availableMethods.includes(method);
-      const availableMethods = enabled ? current.availableMethods.filter((item) => item !== method) : [...current.availableMethods, method];
-      return { ...current, availableMethods, payLaterMethods: availableMethods.includes(method) ? current.payLaterMethods : current.payLaterMethods.filter((item) => item !== method) };
+      const availableMethods = enabled
+        ? current.availableMethods.filter((item) => item !== method)
+        : [...current.availableMethods, method];
+      return {
+        ...current,
+        availableMethods,
+        payLaterMethods: availableMethods.includes(method)
+          ? current.payLaterMethods
+          : current.payLaterMethods.filter((item) => item !== method),
+      };
     });
   };
 
@@ -63,15 +85,26 @@ function LegacyOfferingsPage() {
     setDraft((current) => {
       if (!current) return current;
       const values = current.applicableSchoolLevels;
-      return { ...current, applicableSchoolLevels: values.includes(level) ? values.filter((item) => item !== level) : [...values, level] };
+      return {
+        ...current,
+        applicableSchoolLevels: values.includes(level)
+          ? values.filter((item) => item !== level)
+          : [...values, level],
+      };
     });
   };
 
   const togglePayLater = (method: PaymentMethod) => {
     setDraft((current) => {
-      if (!current || !current.availableMethods.includes(method)) return current;
+      if (!current || !current.availableMethods.includes(method))
+        return current;
       const values = current.payLaterMethods;
-      return { ...current, payLaterMethods: values.includes(method) ? values.filter((item) => item !== method) : [...values, method] };
+      return {
+        ...current,
+        payLaterMethods: values.includes(method)
+          ? values.filter((item) => item !== method)
+          : [...values, method],
+      };
     });
   };
 
@@ -82,67 +115,184 @@ function LegacyOfferingsPage() {
   };
 
   const updateAmount = (value: string) => {
-    setDraft((current) => current ? { ...current, amount: parseEditableAmount(value) } : current);
+    setDraft((current) =>
+      current ? { ...current, amount: parseEditableAmount(value) } : current,
+    );
   };
 
-  const updateAllocation = (index: number, value: Partial<EditableAllocation>) => {
-    setDraft((current) => current ? { ...current, allocations: current.allocations.map((allocation, allocationIndex) => allocationIndex === index ? { ...allocation, ...value } : allocation) } : current);
+  const updateAllocation = (
+    index: number,
+    value: Partial<EditableAllocation>,
+  ) => {
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            allocations: current.allocations.map(
+              (allocation, allocationIndex) =>
+                allocationIndex === index
+                  ? { ...allocation, ...value }
+                  : allocation,
+            ),
+          }
+        : current,
+    );
   };
 
-  const addAllocation = () => setDraft((current) => current ? { ...current, allocations: [...current.allocations, { recipient: "", amount: 0, draftId: createId("allocation") }] } : current);
-  const removeAllocation = (index: number) => setDraft((current) => current && current.allocations.length > 1 ? { ...current, allocations: current.allocations.filter((_, allocationIndex) => allocationIndex !== index) } : current);
+  const addAllocation = () =>
+    setDraft((current) =>
+      current
+        ? {
+            ...current,
+            allocations: [
+              ...current.allocations,
+              { recipient: "", amount: 0, draftId: createId("allocation") },
+            ],
+          }
+        : current,
+    );
+  const removeAllocation = (index: number) =>
+    setDraft((current) =>
+      current && current.allocations.length > 1
+        ? {
+            ...current,
+            allocations: current.allocations.filter(
+              (_, allocationIndex) => allocationIndex !== index,
+            ),
+          }
+        : current,
+    );
 
   const save = async () => {
     if (!draft) return;
     const amount = Number(draft.amount);
-    const cleanAllocations = draft.allocations.map((allocation) => ({ recipient: allocation.recipient.trim(), amount: Number(allocation.amount) }));
-    const allocationTotal = cleanAllocations.reduce((sum, allocation) => sum + allocation.amount, 0);
+    const cleanAllocations = draft.allocations.map((allocation) => ({
+      recipient: allocation.recipient.trim(),
+      amount: Number(allocation.amount),
+    }));
+    const allocationTotal = cleanAllocations.reduce(
+      (sum, allocation) => sum + allocation.amount,
+      0,
+    );
     const slug = draft.slug.trim().toLowerCase().replace(/\s+/g, "-");
     const deadline = draft.payLaterDeadlineAt;
     if (!draft.name.trim() || !slug || !draft.description.trim()) {
-      pushToast({ tone: "error", title: "Complete the payment type details", message: "Name, slug, and description are required." });
+      pushToast({
+        tone: "error",
+        title: "Complete the payment type details",
+        message: "Name, slug, and description are required.",
+      });
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
-      pushToast({ tone: "error", title: "Invalid amount", message: "The amount must be greater than zero." });
+      pushToast({
+        tone: "error",
+        title: "Invalid amount",
+        message: "The amount must be greater than zero.",
+      });
       return;
     }
-    if (!draft.availableMethods.length || !draft.applicableSchoolLevels.length) {
-      pushToast({ tone: "error", title: "Choose availability", message: "Select at least one payment method and school level." });
+    if (
+      !draft.availableMethods.length ||
+      !draft.applicableSchoolLevels.length
+    ) {
+      pushToast({
+        tone: "error",
+        title: "Choose availability",
+        message: "Select at least one payment method and school level.",
+      });
       return;
     }
-    if (draft.payLaterMethods.some((method) => !draft.availableMethods.includes(method))) {
-      pushToast({ tone: "error", title: "Invalid Pay Later methods", message: "Pay Later can only be enabled for available payment methods." });
+    if (
+      draft.payLaterMethods.some(
+        (method) => !draft.availableMethods.includes(method),
+      )
+    ) {
+      pushToast({
+        tone: "error",
+        title: "Invalid Pay Later methods",
+        message: "Pay Later can only be enabled for available payment methods.",
+      });
       return;
     }
     if (draft.payLaterMethods.length) {
-      if (!deadline || Number.isNaN(new Date(deadline).getTime()) || new Date(deadline).getTime() <= Date.now()) {
-        pushToast({ tone: "error", title: "Set a future deadline", message: "Pay Later needs a future deadline. The time is saved in Asia/Manila." });
+      if (
+        !deadline ||
+        Number.isNaN(new Date(deadline).getTime()) ||
+        new Date(deadline).getTime() <= Date.now()
+      ) {
+        pushToast({
+          tone: "error",
+          title: "Set a future deadline",
+          message:
+            "Pay Later needs a future deadline. The time is saved in Asia/Manila.",
+        });
         return;
       }
     }
-    if (cleanAllocations.some((allocation) => !allocation.recipient || !Number.isFinite(allocation.amount) || allocation.amount <= 0)) {
-      pushToast({ tone: "error", title: "Invalid allocations", message: "Each allocation needs a recipient and a positive amount." });
+    if (
+      cleanAllocations.some(
+        (allocation) =>
+          !allocation.recipient ||
+          !Number.isFinite(allocation.amount) ||
+          allocation.amount <= 0,
+      )
+    ) {
+      pushToast({
+        tone: "error",
+        title: "Invalid allocations",
+        message: "Each allocation needs a recipient and a positive amount.",
+      });
       return;
     }
-    if (new Set(cleanAllocations.map((allocation) => allocation.recipient.toLowerCase())).size !== cleanAllocations.length) {
-      pushToast({ tone: "error", title: "Duplicate destinations", message: "Use each allocation recipient only once." });
+    if (
+      new Set(
+        cleanAllocations.map((allocation) =>
+          allocation.recipient.toLowerCase(),
+        ),
+      ).size !== cleanAllocations.length
+    ) {
+      pushToast({
+        tone: "error",
+        title: "Duplicate destinations",
+        message: "Use each allocation recipient only once.",
+      });
       return;
     }
     if (Math.round(allocationTotal * 100) !== Math.round(amount * 100)) {
-      pushToast({ tone: "error", title: "Allocation total does not match", message: `Allocations total ${formatCurrency(allocationTotal)} but the payment type is ${formatCurrency(amount)}.` });
+      pushToast({
+        tone: "error",
+        title: "Allocation total does not match",
+        message: `Allocations total ${formatCurrency(allocationTotal)} but the payment type is ${formatCurrency(amount)}.`,
+      });
       return;
     }
 
     setSaving(true);
     try {
-      const input = { ...draft, slug, name: draft.name.trim(), description: draft.description.trim(), amount, allocations: cleanAllocations, payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined };
+      const input = {
+        ...draft,
+        slug,
+        name: draft.name.trim(),
+        description: draft.description.trim(),
+        amount,
+        allocations: cleanAllocations,
+        payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined,
+      };
       if (draft.id) await saveOffering(input as PaymentOffering);
       else await createOffering(input);
       setDraft(null);
-      pushToast({ tone: "success", title: draft.id ? "Payment type updated" : "Payment type added", message: "The public payment form is using the new settings." });
+      pushToast({
+        tone: "success",
+        title: draft.id ? "Payment type updated" : "Payment type added",
+        message: "The public payment form is using the new settings.",
+      });
     } catch (error) {
-      pushToast({ tone: "error", title: "Could not save payment type", message: error instanceof Error ? error.message : "Try again." });
+      pushToast({
+        tone: "error",
+        title: "Could not save payment type",
+        message: error instanceof Error ? error.message : "Try again.",
+      });
     } finally {
       setSaving(false);
     }
@@ -154,9 +304,17 @@ function LegacyOfferingsPage() {
     try {
       await archiveOffering(archiveId);
       setArchiveId(null);
-      pushToast({ tone: "success", title: "Payment type archived", message: "It is hidden from active lists and the public payment form." });
+      pushToast({
+        tone: "success",
+        title: "Payment type archived",
+        message: "It is hidden from active lists and the public payment form.",
+      });
     } catch (error) {
-      pushToast({ tone: "error", title: "Could not archive payment type", message: error instanceof Error ? error.message : "Try again." });
+      pushToast({
+        tone: "error",
+        title: "Could not archive payment type",
+        message: error instanceof Error ? error.message : "Try again.",
+      });
     } finally {
       setArchiveLoading(false);
     }
@@ -165,24 +323,166 @@ function LegacyOfferingsPage() {
   return (
     <div className="mx-auto max-w-[1280px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-         <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Payment catalog</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payment types</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Create payment types, choose who can pay, and optionally accept Pay Later reservations.</p></div>
-        <Button onClick={() => setDraft(emptyDraft())}><Plus className="h-4 w-4" /> Add payment</Button>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
+            Payment catalog
+          </p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
+            Payment types
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+            Create payment types, choose who can pay, and optionally accept Pay
+            Later reservations.
+          </p>
+        </div>
+        <Button onClick={() => setDraft(emptyDraft())}>
+          <Plus className="h-4 w-4" /> Add payment
+        </Button>
       </div>
-       <section className="grid gap-4 sm:grid-cols-3"><CatalogStat label="Total types" value={data.offerings.filter((offering) => !offering.archivedAt).length} icon={Layers3} /><CatalogStat label="Active types" value={data.offerings.filter((offering) => offering.active && !offering.archivedAt).length} icon={Check} /><CatalogStat label="Allocation rules" value={data.offerings.filter((offering) => !offering.archivedAt).reduce((total, offering) => total + offering.allocations.length, 0)} icon={Coins} /></section>
-         {data.offerings.filter((offering) => !offering.archivedAt).length ? <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{data.offerings.filter((offering) => !offering.archivedAt).map((offering, index) => <div key={offering.id} className="relative"><PaymentTypeCard offering={offering} index={index} onEdit={() => setDraft(toOfferingDraft(offering))} /><button type="button" className="absolute bottom-5 left-5 rounded-lg px-2 py-1 text-[10px] font-bold text-white/60 transition hover:bg-white/10 hover:text-white" onClick={() => setArchiveId(offering.id)}>Archive</button></div>)}</div> : <Card className="p-10 text-center"><p className="text-sm font-bold text-navy-900">No payment types yet</p><p className="mt-2 text-xs text-slate-500">Add the first payment type to make it available on the public form.</p></Card>}
-       <Dialog open={Boolean(draft)} onClose={() => setDraft(null)} title={draft?.id ? "Edit payment type" : "Add payment type"} description="Set the amount, availability, Pay Later deadline, and allocation destinations." size="xl">
-         {draft ? <OfferingForm draft={draft} updateDraft={updateDraft} updateAmount={updateAmount} updateAllocation={updateAllocation} addAllocation={addAllocation} removeAllocation={removeAllocation} toggleAvailability={toggleAvailability} toggleSchoolLevel={toggleSchoolLevel} togglePayLater={togglePayLater} onCancel={() => setDraft(null)} onSave={save} saving={saving} /> : null}
-       </Dialog>
-       <ConfirmDialog open={Boolean(archiveId)} onClose={() => setArchiveId(null)} onConfirm={() => void handleArchive()} title="Archive payment type?" description="This hides the payment type from active admin lists and the public payment form. Existing payment records remain unchanged." confirmLabel="Archive payment type" danger loading={archiveLoading} />
-     </div>
+      <section className="grid gap-4 sm:grid-cols-3">
+        <CatalogStat
+          label="Total types"
+          value={
+            data.offerings.filter((offering) => !offering.archivedAt).length
+          }
+          icon={Layers3}
+        />
+        <CatalogStat
+          label="Active types"
+          value={
+            data.offerings.filter(
+              (offering) => offering.active && !offering.archivedAt,
+            ).length
+          }
+          icon={Check}
+        />
+        <CatalogStat
+          label="Allocation rules"
+          value={data.offerings
+            .filter((offering) => !offering.archivedAt)
+            .reduce(
+              (total, offering) => total + offering.allocations.length,
+              0,
+            )}
+          icon={Coins}
+        />
+      </section>
+      {activeOfferings.length ? (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visibleOfferings.map((offering, index) => (
+              <div key={offering.id} className="relative">
+                <PaymentTypeCard
+                  offering={offering}
+                  index={index}
+                  onEdit={() => setDraft(toOfferingDraft(offering))}
+                />
+                <button
+                  type="button"
+                  className="absolute bottom-5 left-5 rounded-lg px-2 py-1 text-[10px] font-bold text-white/60 transition hover:bg-white/10 hover:text-white"
+                  onClick={() => setArchiveId(offering.id)}
+                >
+                  Archive
+                </button>
+              </div>
+            ))}
+          <div className="md:col-span-2 xl:col-span-3">
+            <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
+          </div>
+        </div>
+      ) : (
+        <Card className="p-10 text-center">
+          <p className="text-sm font-bold text-navy-900">
+            No payment types yet
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            Add the first payment type to make it available on the public form.
+          </p>
+        </Card>
+      )}
+      <Dialog
+        open={Boolean(draft)}
+        onClose={() => setDraft(null)}
+        title={draft?.id ? "Edit payment type" : "Add payment type"}
+        description="Set the amount, availability, Pay Later deadline, and allocation destinations."
+        size="xl"
+      >
+        {draft ? (
+          <OfferingForm
+            draft={draft}
+            updateDraft={updateDraft}
+            updateAmount={updateAmount}
+            updateAllocation={updateAllocation}
+            addAllocation={addAllocation}
+            removeAllocation={removeAllocation}
+            toggleAvailability={toggleAvailability}
+            toggleSchoolLevel={toggleSchoolLevel}
+            togglePayLater={togglePayLater}
+            onCancel={() => setDraft(null)}
+            onSave={save}
+            saving={saving}
+          />
+        ) : null}
+      </Dialog>
+      <ConfirmDialog
+        open={Boolean(archiveId)}
+        onClose={() => setArchiveId(null)}
+        onConfirm={() => void handleArchive()}
+        title="Archive payment type?"
+        description="This hides the payment type from active admin lists and the public payment form. Existing payment records remain unchanged."
+        confirmLabel="Archive payment type"
+        danger
+        loading={archiveLoading}
+      />
+    </div>
   );
 }
 
 export function OfferingsPage() {
   const { data } = useApp();
-  const activeOfferings = data.offerings.filter((offering) => !offering.archivedAt);
-  const exportTypes = () => downloadCsv(`jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`, ["Type", "Slug", "Description", "Amount", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"], activeOfferings.map((offering) => [offering.name, offering.slug, offering.description, offering.amount, offering.active ? "Yes" : "No", offering.availableMethods.join(" | "), offering.payLaterMethods.join(" | "), offering.applicableSchoolLevels.join(" | "), offering.payLaterDeadlineAt]));
-  return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportTypes} disabled={!activeOfferings.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><LegacyOfferingsPage /></div>;
+  const activeOfferings = data.offerings.filter(
+    (offering) => !offering.archivedAt,
+  );
+  const exportTypes = () =>
+    downloadCsv(
+      `jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        "Type",
+        "Slug",
+        "Description",
+        "Amount",
+        "Active",
+        "Payment methods",
+        "Pay Later methods",
+        "Applicable school levels",
+        "Deadline",
+      ],
+      activeOfferings.map((offering) => [
+        offering.name,
+        offering.slug,
+        offering.description,
+        offering.amount,
+        offering.active ? "Yes" : "No",
+        offering.availableMethods.join(" | "),
+        offering.payLaterMethods.join(" | "),
+        offering.applicableSchoolLevels.join(" | "),
+        offering.payLaterDeadlineAt,
+      ]),
+    );
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={exportTypes}
+          disabled={!activeOfferings.length}
+        >
+          <Download className="h-3.5 w-3.5" /> Export CSV
+        </Button>
+      </div>
+      <LegacyOfferingsPage />
+    </div>
+  );
 }
 
 function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<EditableAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {

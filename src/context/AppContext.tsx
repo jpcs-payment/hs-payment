@@ -42,6 +42,7 @@ interface AppContextValue {
   restoreOffering: (offeringId: string) => Promise<void>;
   archivePayer: (payerId: string) => Promise<void>;
   restorePayer: (payerId: string) => Promise<void>;
+  deletePayerPermanently: (payerId: string) => Promise<void>;
   savePaymentMethod: (method: PaymentMethodConfig) => Promise<void>;
   resetDemo: () => void;
 }
@@ -145,6 +146,7 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     paymentDeadlineAt: row.payment_deadline_at ?? undefined,
     senderAccountName: row.sender_account_name ?? undefined,
     senderReference: row.sender_reference ?? undefined,
+    proofPath: row.proof_path ?? undefined,
     proofImage: row.proof_url ?? undefined,
     submittedAt: String(row.submitted_at),
     status: row.status,
@@ -599,6 +601,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const archivePayer = async (payerId: string) => setPayerArchived(payerId, new Date().toISOString());
   const restorePayer = async (payerId: string) => setPayerArchived(payerId, null);
 
+  const deletePayerPermanently = async (payerId: string) => {
+    const client = requireSupabase();
+    const proofPaths = data.payments
+      .filter((payment) => payment.studentId === payerId && payment.proofPath)
+      .map((payment) => payment.proofPath as string);
+    for (let offset = 0; offset < proofPaths.length; offset += 1000) {
+      const { error: proofError } = await client.storage.from("hs-payment-proofs").remove(proofPaths.slice(offset, offset + 1000));
+      if (proofError) throw proofError;
+    }
+    const { error } = await client.rpc("hs_delete_payer_permanently", { p_payer_id: payerId });
+    if (error) {
+      const { error: retryError } = await client.rpc("hs_delete_payer_permanently", { p_payer_id: payerId });
+      if (retryError) throw error;
+    }
+    setData((current) => ({
+      ...current,
+      students: current.students.filter((student) => student.id !== payerId),
+      payments: current.payments.filter((payment) => payment.studentId !== payerId),
+    }));
+  };
+
   const createOffering = async (input: NewPaymentOfferingInput) => {
     const client = requireSupabase();
     const { data: row, error } = await client.from("hs-offerings").insert({
@@ -656,7 +679,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, archivePayer, restorePayer, savePaymentMethod, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

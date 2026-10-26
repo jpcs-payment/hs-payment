@@ -73,6 +73,7 @@ export interface PaymentRecord {
   paymentDeadlineAt?: string;
   senderAccountName?: string;
   senderReference?: string;
+  proofPath?: string;
   proofImage?: string;
   submittedAt: string;
   status: PaymentStatus;

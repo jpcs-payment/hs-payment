@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, Download, Mail, Search, UsersRound, WalletCards } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { EmptyState } from "../../components/EmptyState";
+import { Pagination } from "../../components/Pagination";
 import { StatusBadge } from "../../components/StatusBadge";
 import { useToast } from "../../components/Toast";
 import { Avatar, Button, Card, ConfirmDialog, Dialog, Input, Select } from "../../components/ui";
@@ -9,9 +10,11 @@ import { useApp } from "../../context/AppContext";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import { downloadCsv } from "../../lib/export";
 import { getLatestPayment } from "../../data/seed";
+import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { PaymentRecord, SchoolLevel, Student } from "../../types";
 
 const levelFilters: Array<"All levels" | SchoolLevel> = ["All levels", "Junior High School", "Senior High School", "College"];
+const PAGE_SIZE = 10;
 
 function LegacyPayersPage() {
   const { data } = useApp();
@@ -42,19 +45,90 @@ function PayersWorkspace() {
   const { data, archivePayer } = useApp();
   const { pushToast } = useToast();
   const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<(typeof levelFilters)[number]>("All levels");
+  const [level, setLevel] =
+    useState<(typeof levelFilters)[number]>("All levels");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [archiveId, setArchiveId] = useState<string | null>(null);
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [page, setPage] = useState(1);
   const activeStudents = data.students.filter((student) => !student.archivedAt);
-  const studentsWithPayments = activeStudents.filter((student) => data.payments.some((payment) => payment.studentId === student.id)).length;
-  const approvedPayers = activeStudents.filter((student) => data.payments.some((payment) => payment.studentId === student.id && payment.status === "Approved")).length;
-  const pendingPayers = activeStudents.filter((student) => data.payments.some((payment) => payment.studentId === student.id && payment.status === "Pending")).length;
-  const filteredStudents = useMemo(() => activeStudents.filter((student) => level === "All levels" || student.schoolLevel === level).filter((student) => `${student.name} ${student.email} ${student.yearLevel} ${student.strand ?? ""} ${student.course ?? ""}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [activeStudents, level, query]);
-  const selectedStudent = selectedId ? activeStudents.find((student) => student.id === selectedId) ?? null : null;
-  const archiveStudent = archiveId ? data.students.find((student) => student.id === archiveId) ?? null : null;
+  const studentsWithPayments = activeStudents.filter((student) =>
+    data.payments.some((payment) => payment.studentId === student.id),
+  ).length;
+  const approvedPayers = activeStudents.filter((student) =>
+    data.payments.some(
+      (payment) =>
+        payment.studentId === student.id && payment.status === "Approved",
+    ),
+  ).length;
+  const pendingPayers = activeStudents.filter((student) =>
+    data.payments.some(
+      (payment) =>
+        payment.studentId === student.id && payment.status === "Pending",
+    ),
+  ).length;
+  const filteredStudents = useMemo(
+    () =>
+      activeStudents
+        .filter(
+          (student) => level === "All levels" || student.schoolLevel === level,
+        )
+        .filter((student) =>
+          `${student.name} ${student.email} ${student.yearLevel} ${student.strand ?? ""} ${student.course ?? ""}`
+            .toLowerCase()
+            .includes(query.toLowerCase()),
+        )
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [activeStudents, level, query],
+  );
+  const selectedStudent = selectedId
+    ? (activeStudents.find((student) => student.id === selectedId) ?? null)
+    : null;
+  const archiveStudent = archiveId
+    ? (data.students.find((student) => student.id === archiveId) ?? null)
+    : null;
+  const pageCount = getPageCount(filteredStudents.length, PAGE_SIZE);
+  const visibleStudents = getPageItems(filteredStudents, page, PAGE_SIZE);
 
-  const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"], activeStudents.map((student) => { const payments = data.payments.filter((payment) => payment.studentId === student.id); return [student.name, student.email, student.schoolLevel, student.yearLevel, student.strand, student.course, payments.length, payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0)]; }));
+  useEffect(() => {
+    setPage(1);
+  }, [level, query]);
+
+  useEffect(() => {
+    setPage((current) => Math.min(current, pageCount));
+  }, [pageCount]);
+
+  const exportPayers = () =>
+    downloadCsv(
+      `jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`,
+      [
+        "Payer",
+        "Email",
+        "School level",
+        "Year level",
+        "Strand",
+        "Course",
+        "Payment count",
+        "Approved total",
+      ],
+      activeStudents.map((student) => {
+        const payments = data.payments.filter(
+          (payment) => payment.studentId === student.id,
+        );
+        return [
+          student.name,
+          student.email,
+          student.schoolLevel,
+          student.yearLevel,
+          student.strand,
+          student.course,
+          payments.length,
+          payments
+            .filter((payment) => payment.status === "Approved")
+            .reduce((total, payment) => total + payment.amount, 0),
+        ];
+      }),
+    );
   const handleArchive = async () => {
     if (!archiveId) return;
     setArchiveLoading(true);
@@ -62,15 +136,171 @@ function PayersWorkspace() {
       await archivePayer(archiveId);
       setArchiveId(null);
       if (selectedId === archiveId) setSelectedId(null);
-      pushToast({ tone: "success", title: "Payer archived", message: "The payer is hidden from active lists and the public payment flow." });
+      pushToast({
+        tone: "success",
+        title: "Payer archived",
+        message:
+          "The payer is hidden from active lists and the public payment flow.",
+      });
     } catch (error) {
-      pushToast({ tone: "error", title: "Could not archive payer", message: error instanceof Error ? error.message : "Try again." });
+      pushToast({
+        tone: "error",
+        title: "Could not archive payer",
+        message: error instanceof Error ? error.message : "Try again.",
+      });
     } finally {
       setArchiveLoading(false);
     }
   };
 
-  return <div className="mx-auto max-w-[1400px] space-y-6"><div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">People & accounts</p><h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payers</h2><p className="mt-2 text-sm leading-6 text-slate-500">Search payer details and inspect their payment history.</p></div><div className="flex flex-wrap items-center gap-2"><div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800"><UsersRound className="h-4 w-4" />{activeStudents.length} active payer records</div><Button size="sm" variant="outline" onClick={exportPayers} disabled={!activeStudents.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div></div><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><AdminStat label="Total payers" value={String(activeStudents.length)} detail="Active payer details" /><AdminStat label="With payment records" value={String(studentsWithPayments)} detail="Have submitted at least once" /><AdminStat label="Confirmed payers" value={String(approvedPayers)} detail="Have a released ticket" /><AdminStat label="Awaiting review" value={String(pendingPayers)} detail="Need admin attention" /></section><Card className="p-4 sm:p-5"><div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"><div className="relative w-full lg:max-w-md"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, email, year, strand, or course" /></div><div className="flex flex-wrap items-center gap-2"><span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Filter</span><Select className="w-auto min-w-[180px]" value={level} onChange={(event) => setLevel(event.target.value as typeof level)}>{levelFilters.map((item) => <option key={item}>{item}</option>)}</Select></div></div></Card>{filteredStudents.length ? <Card className="overflow-hidden"><div className="hidden border-b border-line bg-mist px-5 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400 md:grid md:grid-cols-[minmax(0,1.6fr)_180px_150px_120px_150px] md:gap-4 md:px-6"><span>Payer</span><span>School details</span><span>Payments</span><span>Latest</span><span>Actions</span></div><div className="divide-y divide-line">{filteredStudents.map((student) => <PayerArchiveRow key={student.id} student={student} payments={data.payments.filter((payment) => payment.studentId === student.id)} onView={() => setSelectedId(student.id)} onArchive={() => setArchiveId(student.id)} />)}</div></Card> : <EmptyState icon={UsersRound} title="No payers found" description="Try a different search or filter." />}<Dialog open={Boolean(selectedStudent)} onClose={() => setSelectedId(null)} title={selectedStudent?.name ?? "Payer profile"} description={selectedStudent ? `${selectedStudent.email} · ${selectedStudent.schoolLevel}` : undefined} size="lg">{selectedStudent ? <PayerDetails student={selectedStudent} payments={data.payments.filter((payment) => payment.studentId === selectedStudent.id)} onViewPayments={() => { setSelectedId(null); }} /> : null}</Dialog><ConfirmDialog open={Boolean(archiveId)} onClose={() => setArchiveId(null)} onConfirm={() => void handleArchive()} title="Archive payer?" description={archiveStudent ? `This hides ${archiveStudent.name} from active payer lists and the public payment flow. Existing payment records remain unchanged.` : "The payer will be hidden from active lists."} confirmLabel="Archive payer" danger loading={archiveLoading} /></div>;
+  return (
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
+            People & accounts
+          </p>
+          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
+            Payers
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-slate-500">
+            Search payer details and inspect their payment history.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
+            <UsersRound className="h-4 w-4" />
+            {activeStudents.length} active payer records
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportPayers}
+            disabled={!activeStudents.length}
+          >
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+        </div>
+      </div>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <AdminStat
+          label="Total payers"
+          value={String(activeStudents.length)}
+          detail="Active payer details"
+        />
+        <AdminStat
+          label="With payment records"
+          value={String(studentsWithPayments)}
+          detail="Have submitted at least once"
+        />
+        <AdminStat
+          label="Confirmed payers"
+          value={String(approvedPayers)}
+          detail="Have a released ticket"
+        />
+        <AdminStat
+          label="Awaiting review"
+          value={String(pendingPayers)}
+          detail="Need admin attention"
+        />
+      </section>
+      <Card className="p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="relative w-full lg:max-w-md">
+            <Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+            <Input
+              className="pl-10"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by name, email, year, strand, or course"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              Filter
+            </span>
+            <Select
+              className="w-auto min-w-[180px]"
+              value={level}
+              onChange={(event) => setLevel(event.target.value as typeof level)}
+            >
+              {levelFilters.map((item) => (
+                <option key={item}>{item}</option>
+              ))}
+            </Select>
+          </div>
+        </div>
+      </Card>
+      {filteredStudents.length ? (
+        <Card className="overflow-hidden">
+          <div className="hidden border-b border-line bg-mist px-5 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400 md:grid md:grid-cols-[minmax(0,1.6fr)_180px_150px_120px_150px] md:gap-4 md:px-6">
+            <span>Payer</span>
+            <span>School details</span>
+            <span>Payments</span>
+            <span>Latest</span>
+            <span>Actions</span>
+          </div>
+          <div className="divide-y divide-line">
+            {visibleStudents.map((student) => (
+              <PayerArchiveRow
+                key={student.id}
+                student={student}
+                payments={data.payments.filter(
+                  (payment) => payment.studentId === student.id,
+                )}
+                onView={() => setSelectedId(student.id)}
+                onArchive={() => setArchiveId(student.id)}
+              />
+            ))}
+          </div>
+          <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
+        </Card>
+      ) : (
+        <EmptyState
+          icon={UsersRound}
+          title="No payers found"
+          description="Try a different search or filter."
+        />
+      )}
+      <Dialog
+        open={Boolean(selectedStudent)}
+        onClose={() => setSelectedId(null)}
+        title={selectedStudent?.name ?? "Payer profile"}
+        description={
+          selectedStudent
+            ? `${selectedStudent.email} · ${selectedStudent.schoolLevel}`
+            : undefined
+        }
+        size="lg"
+      >
+        {selectedStudent ? (
+          <PayerDetails
+            student={selectedStudent}
+            payments={data.payments.filter(
+              (payment) => payment.studentId === selectedStudent.id,
+            )}
+            onViewPayments={() => {
+              setSelectedId(null);
+            }}
+          />
+        ) : null}
+      </Dialog>
+      <ConfirmDialog
+        open={Boolean(archiveId)}
+        onClose={() => setArchiveId(null)}
+        onConfirm={() => void handleArchive()}
+        title="Archive payer?"
+        description={
+          archiveStudent
+            ? `This hides ${archiveStudent.name} from active payer lists and the public payment flow. Existing payment records remain unchanged.`
+            : "The payer will be hidden from active lists."
+        }
+        confirmLabel="Archive payer"
+        danger
+        loading={archiveLoading}
+      />
+    </div>
+  );
 }
 
 function PayerArchiveRow({ student, payments, onView, onArchive }: { student: Student; payments: PaymentRecord[]; onView: () => void; onArchive: () => void }) {
