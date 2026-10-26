@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { LockKeyhole } from "lucide-react";
 import { OrganizationLogo } from "./OrganizationLogo";
+import { ThemeToggle } from "./ThemeToggle";
 import { BRANDING } from "../lib/branding";
 
 export function PublicShell({ children }: { children: ReactNode }) {
@@ -9,7 +10,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
       <header className="border-b border-line bg-white/90 backdrop-blur">
         <div className="mx-auto flex min-h-[78px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <OrganizationLogo surface="light" />
-          <div className="hidden items-center gap-3 text-right text-[10px] font-semibold leading-4 text-slate-400 sm:flex">Secure payment submission<br />No account required</div>
+          <div className="flex items-center gap-3"><div className="hidden text-right text-[10px] font-semibold leading-4 text-slate-400 sm:block">Secure payment submission<br />No account required</div><ThemeToggle /></div>
         </div>
       </header>
       <main className="px-4 py-6 sm:px-6 sm:py-10 lg:px-8">{children}</main>

@@ -5,6 +5,7 @@ import { OrganizationLogo } from "../../components/OrganizationLogo";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { formatCurrency, formatDateTime, methodAccent } from "../../lib/utils";
+import { paymentMethodLogos } from "../../lib/paymentMethods";
 import type { PaymentMethod, PaymentRecord, SchoolLevel } from "../../types";
 
 interface PaymentFormState {
@@ -79,12 +80,21 @@ export function PaymentPage() {
   const isCashless = form.method === "GCash" || form.method === "MariBank";
 
   useEffect(() => {
+    const nextOfferingId = eligibleOfferings.some((offering) => offering.id === form.offeringId) ? form.offeringId : eligibleOfferings[0]?.id ?? "";
+    const nextMethod = availableMethods.includes(form.method as PaymentMethod) ? form.method : availableMethods[0] ?? "";
+    const methodChanged = nextMethod !== form.method;
+    if (nextOfferingId === form.offeringId && !methodChanged) return;
+
     setForm((current) => ({
       ...current,
-      offeringId: eligibleOfferings.some((offering) => offering.id === current.offeringId) ? current.offeringId : eligibleOfferings[0]?.id ?? "",
-      method: availableMethods.includes(current.method as PaymentMethod) ? current.method : availableMethods[0] ?? "",
+      offeringId: nextOfferingId,
+      method: nextMethod,
+      ...(methodChanged ? { senderAccountName: "", senderReference: "", proofImage: "" } : {}),
     }));
-  }, [availableMethods, eligibleOfferings]);
+    if (methodChanged) {
+      setErrors((current) => ({ ...current, method: undefined, senderAccountName: undefined, senderReference: undefined, proofImage: undefined }));
+    }
+  }, [availableMethods, eligibleOfferings, form.method, form.offeringId]);
 
   useEffect(() => {
     if (!yearOptions.includes(form.yearLevel)) setForm((current) => ({ ...current, yearLevel: yearOptions[0] }));
@@ -93,6 +103,12 @@ export function PaymentPage() {
   const updateForm = <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
     setErrors((current) => ({ ...current, [key]: undefined }));
+  };
+
+  const changeMethod = (method: PaymentMethod) => {
+    if (method === form.method) return;
+    setForm((current) => ({ ...current, method, senderAccountName: "", senderReference: "", proofImage: "" }));
+    setErrors((current) => ({ ...current, method: undefined, senderAccountName: undefined, senderReference: undefined, proofImage: undefined }));
   };
 
   const changeSchoolLevel = (level: SchoolLevel) => {
@@ -236,10 +252,43 @@ export function PaymentPage() {
 
             <Card className="animate-fade-up p-5 sm:p-7">
               <FormSection icon={WalletCards} eyebrow="03 · Payment method" title="Choose how you will pay" description={selectedOffering ? `Amount due is ${formatCurrency(selectedOffering.amount)}.` : "Choose a payment offering first."}>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{availableMethods.map((method) => { const config = data.paymentMethods.find((item) => item.id === method); return <MethodOption key={method} method={method} accountName={config?.accountName ?? ""} selected={form.method === method} onClick={() => updateForm("method", method)} />; })}</div>
+                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{availableMethods.map((method) => { const config = data.paymentMethods.find((item) => item.id === method); return <MethodOption key={method} method={method} accountName={config?.accountName ?? ""} logo={paymentMethodLogos[method]} selected={form.method === method} onClick={() => changeMethod(method)} />; })}</div>
                 {!availableMethods.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">No payment methods are enabled for this offering.</p> : null}
                 {errors.method ? <p className="mt-2 text-xs font-semibold text-coral">{errors.method}</p> : null}
-                {methodConfig ? <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50/60 p-4"><div className="flex items-start gap-3"><span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-navy-700 shadow-sm"><CircleHelp className="h-4 w-4" /></span><div className="min-w-0 flex-1"><p className="break-words text-xs font-bold text-navy-900">{methodConfig.accountName}</p><p className="mt-1 break-words text-xs font-semibold text-navy-800">{methodConfig.accountNumber}</p><p className="mt-2 break-words text-[11px] leading-5 text-slate-500">{methodConfig.instructions}</p>{methodConfig.qrImage ? <img src={methodConfig.qrImage} alt={`${methodConfig.id} payment QR`} className="mt-4 max-h-40 w-full rounded-xl bg-white object-contain p-2" /> : null}</div></div>{isCashless ? <ProofUpload image={form.proofImage} error={errors.proofImage} onUpload={handleProofUpload} onClear={() => updateForm("proofImage", "")} /> : <div className="mt-4 grid gap-3 sm:grid-cols-2"><FormField label="Sender account name" error={errors.senderAccountName}><Input value={form.senderAccountName} onChange={(event) => updateForm("senderAccountName", event.target.value)} placeholder="Optional for cash" /></FormField><FormField label="Account or cashier reference" error={errors.senderReference}><Input value={form.senderReference} onChange={(event) => updateForm("senderReference", event.target.value)} placeholder="Cashier reference" /></FormField></div>}</div> : null}
+                 {methodConfig ? (
+                   <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50/60 p-4">
+                     <div className="flex items-start gap-3">
+                       <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white text-navy-700 shadow-sm">
+                         {paymentMethodLogos[methodConfig.id] ? <img src={paymentMethodLogos[methodConfig.id]} alt={`${methodConfig.id} logo`} className="h-full w-full object-contain" /> : <CircleHelp className="h-4 w-4" />}
+                       </span>
+                       <div className="min-w-0 flex-1">
+                         <p className="break-words text-xs font-bold text-navy-900">{methodConfig.accountName}</p>
+                         <p className="mt-1 break-words text-xs font-semibold text-navy-800">{methodConfig.accountNumber}</p>
+                         <p className="mt-2 break-words text-[11px] leading-5 text-slate-500">{methodConfig.instructions}</p>
+                         {methodConfig.qrImage ? <img src={methodConfig.qrImage} alt={`${methodConfig.id} payment QR`} className="mt-4 max-h-40 w-full rounded-xl bg-white object-contain p-2" /> : null}
+                       </div>
+                     </div>
+                     {isCashless ? (
+                       <>
+                         <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                           <FormField label="Sender account name" required error={errors.senderAccountName}>
+                             <Input value={form.senderAccountName} onChange={(event) => updateForm("senderAccountName", event.target.value)} placeholder="Name registered on the account" />
+                           </FormField>
+                           <FormField label="Sender account number / reference" required error={errors.senderReference}>
+                             <Input value={form.senderReference} onChange={(event) => updateForm("senderReference", event.target.value)} placeholder="Account number or transaction reference" />
+                           </FormField>
+                         </div>
+                         <ProofUpload image={form.proofImage} error={errors.proofImage} onUpload={handleProofUpload} onClear={() => updateForm("proofImage", "")} />
+                       </>
+                     ) : (
+                       <div className="mt-4">
+                         <FormField label="Cashier reference" error={errors.senderReference}>
+                           <Input value={form.senderReference} onChange={(event) => updateForm("senderReference", event.target.value)} placeholder="Reference from the cashier (optional)" />
+                         </FormField>
+                       </div>
+                     )}
+                   </div>
+                 ) : null}
               </FormSection>
             </Card>
 
@@ -269,8 +318,8 @@ function OfferingOption({ offering, selected, onClick }: { offering: { id: strin
   return <button type="button" aria-pressed={selected} className={`group relative overflow-hidden rounded-2xl border p-4 text-left transition duration-200 motion-safe:hover:-translate-y-0.5 ${selected ? "border-navy-700 bg-navy-900 text-white shadow-float" : "border-line bg-white hover:border-navy-300 hover:bg-navy-50"}`} onClick={onClick}><span className={`absolute -right-8 -top-8 h-24 w-24 rounded-full transition ${selected ? "bg-blue-400/20" : "bg-navy-50 group-hover:bg-blue-100"}`} /><span className="relative flex items-start justify-between gap-3"><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${selected ? "bg-white/10 text-blue-100" : "bg-navy-50 text-navy-700"}`}><ReceiptText className="h-4 w-4" /></span><span className={`text-lg font-extrabold ${selected ? "text-white" : "text-navy-900"}`}>{formatCurrency(offering.amount)}</span></span><span className={`relative mt-4 block break-words text-sm font-extrabold ${selected ? "text-white" : "text-navy-900"}`}>{offering.name}</span><span className={`relative mt-1 block break-words text-xs leading-5 ${selected ? "text-blue-100/70" : "text-slate-500"}`}>{offering.description}</span><span className={`relative mt-4 block break-words text-[10px] font-semibold ${selected ? "text-blue-100/70" : "text-slate-400"}`}>{offering.allocations.map((allocation) => `${allocation.recipient}: ${formatCurrency(allocation.amount)}`).join(" · ")}</span></button>;
 }
 
-function MethodOption({ method, accountName, selected, onClick }: { method: PaymentMethod; accountName: string; selected: boolean; onClick: () => void }) {
-  return <button type="button" aria-pressed={selected} className={`rounded-2xl border p-4 text-left transition duration-200 motion-safe:hover:-translate-y-0.5 ${selected ? "border-navy-700 bg-navy-50 ring-2 ring-navy-700/10" : "border-line bg-white hover:border-navy-300 hover:bg-navy-50"}`} onClick={onClick}><span className="flex items-center justify-between gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl text-white" style={{ backgroundColor: methodAccent[method] }}>{method === "Cash" ? <Banknote className="h-4 w-4" /> : <WalletCards className="h-4 w-4" />}</span><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-navy-700 bg-navy-700 text-white" : "border-slate-200 text-transparent"}`}><Check className="h-3 w-3" /></span></span><span className="mt-4 block text-sm font-extrabold text-navy-900">{method}</span><span className="mt-1 block break-words text-[10px] leading-4 text-slate-500">{accountName}</span></button>;
+function MethodOption({ method, accountName, logo, selected, onClick }: { method: PaymentMethod; accountName: string; logo?: string; selected: boolean; onClick: () => void }) {
+  return <button type="button" aria-pressed={selected} className={`rounded-2xl border p-4 text-left transition duration-200 motion-safe:hover:-translate-y-0.5 ${selected ? "border-navy-700 bg-navy-50 ring-2 ring-navy-700/10" : "border-line bg-white hover:border-navy-300 hover:bg-navy-50"}`} onClick={onClick}><span className="flex items-center justify-between gap-3"><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${logo ? "overflow-hidden bg-white p-1" : "text-white"}`} style={logo ? undefined : { backgroundColor: methodAccent[method] }}>{logo ? <img src={logo} alt={`${method} logo`} className="h-full w-full object-contain" /> : method === "Cash" ? <Banknote className="h-4 w-4" /> : <WalletCards className="h-4 w-4" />}</span><span className={`flex h-5 w-5 items-center justify-center rounded-full border ${selected ? "border-navy-700 bg-navy-700 text-white" : "border-slate-200 text-transparent"}`}><Check className="h-3 w-3" /></span></span><span className="mt-4 block text-sm font-extrabold text-navy-900">{method}</span><span className="mt-1 block break-words text-[10px] leading-4 text-slate-500">{accountName}</span></button>;
 }
 
 function FormSection({ icon: Icon, eyebrow, title, description, children }: { icon: typeof ShieldCheck; eyebrow: string; title: string; description: string; children: ReactNode }) {

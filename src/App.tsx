@@ -1,8 +1,9 @@
 import { lazy, Suspense } from "react";
-import { BrowserRouter, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useApp } from "./context/AppContext";
 import { AppShell } from "./components/AppShell";
 import { PublicShell } from "./components/PublicShell";
+import { ThemeToggle } from "./components/ThemeToggle";
 import { PaymentPage } from "./pages/student/PaymentPage";
 
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
@@ -19,9 +20,15 @@ function AdminGuard() {
   return <Outlet />;
 }
 
+function AdminLoginThemeToggle() {
+  const location = useLocation();
+  return location.pathname === "/admin/login" ? <div className="fixed right-4 top-4 z-20"><ThemeToggle surface="dark" /></div> : null;
+}
+
 export function App() {
   return (
     <BrowserRouter>
+      <AdminLoginThemeToggle />
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-mist px-4 text-sm font-semibold text-slate-500">Loading JPCS Payment...</div>}>
         <Routes>
           <Route path="/" element={<PublicShell><PaymentPage /></PublicShell>} />
