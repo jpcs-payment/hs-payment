@@ -9,20 +9,12 @@ const MAX_BODY_BYTES = 256 * 1024;
 const MAX_SUBMISSION_BODY_BYTES = 8 * 1024 * 1024;
 const requestAttempts = new Map();
 
-const setResponseHeaders = (response, request) => {
-  const origin = request?.headers.origin;
-  const allowedOrigin = process.env.APP_ORIGIN?.trim();
-  if (allowedOrigin && origin === allowedOrigin) {
-    response.setHeader("Access-Control-Allow-Origin", allowedOrigin);
-    response.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    response.setHeader("Vary", "Origin");
-  }
+const setResponseHeaders = (response) => {
   response.setHeader("Cache-Control", "no-store");
 };
 
-const sendJson = (request, response, status, body) => {
-  setResponseHeaders(response, request);
+const sendJson = (response, status, body) => {
+  setResponseHeaders(response);
   response.writeHead(status, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(body));
 };
@@ -59,41 +51,41 @@ const readJson = (request, maxBytes = MAX_BODY_BYTES) => new Promise((resolve, r
 });
 
 const server = http.createServer(async (request, response) => {
-  setResponseHeaders(response, request);
+  setResponseHeaders(response);
   if (request.method === "OPTIONS") {
     response.writeHead(204);
     response.end();
     return;
   }
   if (request.method === "GET" && request.url === "/api/health") {
-    sendJson(request, response, 200, { ok: true, configured: isEmailConfigured() });
+    sendJson(response, 200, { ok: true, configured: isEmailConfigured() });
     return;
   }
   if (request.method !== "POST" || !["/api/submit-payment", "/api/send-approval-email", "/api/send-pay-later-email"].includes(request.url)) {
-    sendJson(request, response, 404, { error: "Not found." });
+    sendJson(response, 404, { error: "Not found." });
     return;
   }
 
   try {
     const requestKey = `${request.socket.remoteAddress ?? "unknown"}:${request.url}`;
     if (isRateLimited(requestKey)) {
-      sendJson(request, response, 429, { error: "Too many email delivery attempts. Try again later." });
+      sendJson(response, 429, { error: "Too many email delivery attempts. Try again later." });
       return;
     }
     const body = await readJson(request, request.url === "/api/submit-payment" ? MAX_SUBMISSION_BODY_BYTES : MAX_BODY_BYTES);
     if (request.url === "/api/submit-payment") {
       const payment = await submitPayment(body?.payment, { requestKey });
-      sendJson(request, response, 201, { payment });
+      sendJson(response, 201, { payment });
       return;
     }
     const result = request.url === "/api/send-pay-later-email"
       ? await sendPayLaterEmail(body?.payment, { verify: true, requestKey })
       : await sendApprovalEmail(body?.payment, { verify: true, requireAdmin: true, authorization: request.headers.authorization, requestKey });
-    sendJson(request, response, result.status, result.body);
+    sendJson(response, result.status, result.body);
   } catch (error) {
     const status = error instanceof PublicSubmissionError ? error.status : 500;
     if (status >= 500) console.error("Local API server error:", error instanceof Error ? error.message : error);
-    sendJson(request, response, status, { error: error instanceof PublicSubmissionError ? error.message : "The local API server could not process the request." });
+    sendJson(response, status, { error: error instanceof PublicSubmissionError ? error.message : "The local API server could not process the request." });
   }
 });
 

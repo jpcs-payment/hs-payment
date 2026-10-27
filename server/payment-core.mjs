@@ -10,7 +10,6 @@ const maxIpSubmissions = 20;
 const config = () => ({
   supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
-  rateLimitSalt: process.env.RATE_LIMIT_SALT?.trim() ?? "jpcs-payment-rate-limit",
 });
 
 export class PublicSubmissionError extends Error {
@@ -63,17 +62,17 @@ const normalizeInput = (input) => {
   return { idempotencyKey, studentName, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, senderAccountName, senderReference, proofImage };
 };
 
-const hashValue = (value, salt) => createHash("sha256").update(`${salt}:${value}`).digest("hex");
+const hashValue = (value, secret) => createHash("sha256").update(`${secret}:${value}`).digest("hex");
 
-const checkSubmissionRateLimit = async (client, email, requestKey, salt) => {
-  const ipHash = requestKey ? hashValue(requestKey, salt) : undefined;
+const checkSubmissionRateLimit = async (client, email, requestKey, secret) => {
+  const ipHash = requestKey ? hashValue(requestKey, secret) : undefined;
   const { data, error } = await client.rpc("hs_claim_submission_slot", { p_email: email, p_ip_hash: ipHash ?? null, p_email_limit: maxEmailSubmissions, p_ip_limit: maxIpSubmissions, p_window_seconds: Math.floor(submissionWindowMs / 1000) });
   if (error) throw error;
   if (data !== true) throw new PublicSubmissionError("Too many payment submissions. Try again later.", 429);
 };
 
 export async function submitPayment(input, { requestKey } = {}) {
-  const { supabaseUrl, serviceRoleKey, rateLimitSalt } = config();
+  const { supabaseUrl, serviceRoleKey } = config();
   if (!supabaseUrl || !serviceRoleKey) throw new PublicSubmissionError("The secure payment submission service is not configured.", 503);
   const payment = normalizeInput(input);
   const client = createClient(supabaseUrl, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
@@ -98,7 +97,7 @@ export async function submitPayment(input, { requestKey } = {}) {
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
     return existingResponse.data;
   }
-  await checkSubmissionRateLimit(client, payment.email, requestKey, rateLimitSalt);
+  await checkSubmissionRateLimit(client, payment.email, requestKey, serviceRoleKey);
 
   const payerId = randomUUID();
   let proofPath;
