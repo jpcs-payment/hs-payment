@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { OrganizationLogo } from "./OrganizationLogo";
 import { ThemeToggle } from "./ThemeToggle";
+import { BRANDING } from "../lib/branding";
 
 export function PublicShell({ children }: { children: ReactNode }) {
   return (
@@ -12,7 +13,7 @@ export function PublicShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="px-4 py-6 sm:px-6 sm:py-10 lg:px-8">{children}</main>
-      <footer className="border-t border-line bg-white px-4 py-6 text-center text-[11px] font-semibold leading-5 text-slate-400 sm:px-6 lg:px-8"><p>JPCS-LCC @ 2026</p></footer>
+      <footer className="border-t border-line bg-white px-4 py-6 text-center text-[11px] leading-5 text-slate-400 sm:px-6 lg:px-8"><p className="font-semibold">JPCS-LCC @ 2026</p><p className="mt-1 break-words text-[10px] font-medium">{BRANDING.projectLead}</p></footer>
     </div>
   );
 }

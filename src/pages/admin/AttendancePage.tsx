@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AlertCircle, Camera, CheckCircle2, ClipboardCheck, Clock3, Download, RotateCcw, ScanLine, Search, StopCircle, SwitchCamera, Ticket, UsersRound, XCircle } from "lucide-react";
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
 import { Pagination } from "../../components/Pagination";
+import { ResponsiveAttendanceFilters } from "../../components/AttendanceFilters";
 import { Card, Button, ConfirmDialog, FieldLabel, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
-import { downloadCsv } from "../../lib/export";
+import { downloadCsv, downloadPdf } from "../../lib/export";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { PaymentRecord, TicketCheckInResult } from "../../types";
@@ -297,21 +298,8 @@ export function AttendancePage() {
     setCameraError("");
   };
 
-  const exportCsv = () => {
-    const headers = [
-      "Type",
-      "Student",
-      "Email",
-      "Reference",
-      "Ticket ID",
-      "Amount",
-      "Payment method",
-      "Payment mode",
-      "Payment state",
-      "Attendance status",
-      "Checked in at",
-    ];
-    const rows = filteredAttendance.map((payment) => [
+  const attendanceExportHeaders = ["Type", "Student", "Email", "Reference", "Ticket ID", "Amount", "Payment method", "Payment mode", "Payment state", "Attendance status", "Checked in at"];
+  const attendanceExportRows = filteredAttendance.map((payment) => [
       payment.offeringName,
       payment.studentName,
       payment.email,
@@ -327,18 +315,16 @@ export function AttendancePage() {
           : "Checked in"
         : "Not checked in",
       payment.attendedAt ? formatDateTime(payment.attendedAt) : "",
-    ]);
-    downloadCsv(
-      `jpcs-attendance-${new Date().toISOString().slice(0, 10)}.csv`,
-      headers,
-      rows,
-    );
+  ]);
+  const exportCsv = () => {
+    downloadCsv(`jpcs-attendance-${new Date().toISOString().slice(0, 10)}.csv`, attendanceExportHeaders, attendanceExportRows);
     pushToast({
       tone: "success",
       title: "Attendance report exported",
       message: `${filteredAttendance.length} ticket records were included.`,
     });
   };
+  const exportPdf = () => downloadPdf({ filename: `jpcs-attendance-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Attendance Report", subtitle: `${filteredAttendance.length} matching tickets`, headers: attendanceExportHeaders, rows: attendanceExportRows, orientation: "landscape" });
 
   const handleUndoAttendance = async () => {
     if (!undoId) return;
@@ -441,7 +427,7 @@ export function AttendancePage() {
           <ScanHistory history={scanHistory} />
         </div>
       </section>
-      <AttendanceFilters
+      <ResponsiveAttendanceFilters
         eventFilter={eventFilter}
         events={events}
         query={query}
@@ -457,6 +443,7 @@ export function AttendancePage() {
         onTimeFromChange={setTimeFrom}
         onTimeToChange={setTimeTo}
         onExport={exportCsv}
+        onExportPdf={exportPdf}
       />
       <AttendanceList
         payments={visibleAttendance}
@@ -480,7 +467,7 @@ export function AttendancePage() {
   );
 }
 
-function AttendanceFilters({ eventFilter, events, query, dateFrom, dateTo, timeFrom, timeTo, resultCount, onEventChange, onQueryChange, onDateFromChange, onDateToChange, onTimeFromChange, onTimeToChange, onExport }: { eventFilter: string; events: string[]; query: string; dateFrom: string; dateTo: string; timeFrom: string; timeTo: string; resultCount: number; onEventChange: (value: string) => void; onQueryChange: (value: string) => void; onDateFromChange: (value: string) => void; onDateToChange: (value: string) => void; onTimeFromChange: (value: string) => void; onTimeToChange: (value: string) => void; onExport: () => void }) {
+function LegacyAttendanceFilters({ eventFilter, events, query, dateFrom, dateTo, timeFrom, timeTo, resultCount, onEventChange, onQueryChange, onDateFromChange, onDateToChange, onTimeFromChange, onTimeToChange, onExport }: { eventFilter: string; events: string[]; query: string; dateFrom: string; dateTo: string; timeFrom: string; timeTo: string; resultCount: number; onEventChange: (value: string) => void; onQueryChange: (value: string) => void; onDateFromChange: (value: string) => void; onDateToChange: (value: string) => void; onTimeFromChange: (value: string) => void; onTimeToChange: (value: string) => void; onExport: () => void }) {
   return <Card className="p-4 sm:p-5"><div className="flex flex-col gap-4"><div className="flex flex-col justify-between gap-3 lg:flex-row lg:items-center"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Attendance report</p><h3 className="mt-1 text-base font-extrabold text-navy-900">Filter and export check-ins</h3><p className="mt-1 text-xs text-slate-500">{resultCount} matching ticket{resultCount === 1 ? "" : "s"}</p></div><Button className="w-full sm:w-auto" variant="outline" size="sm" onClick={onExport} disabled={!resultCount}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-7"><div className="min-w-0 2xl:col-span-2"><FieldLabel>Search</FieldLabel><div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="min-w-0 pl-10" value={query} onChange={(event) => onQueryChange(event.target.value)} placeholder="Student, email, reference, ticket" /></div></div><div className="min-w-0"><FieldLabel>Type</FieldLabel><Select className="min-w-0" value={eventFilter} onChange={(event) => onEventChange(event.target.value)}>{events.map((event) => <option key={event}>{event}</option>)}</Select></div><div className="min-w-0"><FieldLabel>Date from</FieldLabel><Input className="min-w-0" type="date" value={dateFrom} onChange={(event) => onDateFromChange(event.target.value)} /></div><div className="min-w-0"><FieldLabel>Date to</FieldLabel><Input className="min-w-0" type="date" value={dateTo} onChange={(event) => onDateToChange(event.target.value)} /></div><div className="min-w-0"><FieldLabel>Time from</FieldLabel><Input className="min-w-0" type="time" value={timeFrom} onChange={(event) => onTimeFromChange(event.target.value)} /></div><div className="min-w-0"><FieldLabel>Time to</FieldLabel><Input className="min-w-0" type="time" value={timeTo} onChange={(event) => onTimeToChange(event.target.value)} /></div></div></div></Card>;
 }
 

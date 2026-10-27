@@ -1,5 +1,6 @@
 import { useEffect, useState, type ButtonHTMLAttributes, type ChangeEvent, type ReactNode } from "react";
 import { Check, Loader2, X } from "lucide-react";
+import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
 
 type ButtonVariant = "primary" | "secondary" | "outline" | "ghost" | "danger" | "dark";
@@ -26,6 +27,29 @@ const buttonSizes: Record<ButtonSize, string> = {
   md: "h-10 px-4 text-sm",
   lg: "h-12 px-5 text-sm",
   icon: "h-10 w-10 p-0",
+};
+
+let dialogLockCount = 0;
+let previousBodyOverflow = "";
+let previousBodyPaddingRight = "";
+
+const lockDialogScroll = () => {
+  if (dialogLockCount === 0) {
+    previousBodyOverflow = document.body.style.overflow;
+    previousBodyPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) document.body.style.paddingRight = `${scrollbarWidth}px`;
+  }
+  dialogLockCount += 1;
+};
+
+const unlockDialogScroll = () => {
+  dialogLockCount = Math.max(0, dialogLockCount - 1);
+  if (dialogLockCount === 0) {
+    document.body.style.overflow = previousBodyOverflow;
+    document.body.style.paddingRight = previousBodyPaddingRight;
+  }
 };
 
 export function Button({ className, variant = "primary", size = "md", loading = false, disabled, children, ...props }: ButtonProps) {
@@ -127,11 +151,10 @@ export function Dialog({
       if (event.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handleKeyDown);
-    const originalOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    lockDialogScroll();
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = originalOverflow;
+      unlockDialogScroll();
     };
   }, [open, onClose]);
 
@@ -139,22 +162,25 @@ export function Dialog({
 
   const widths = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl", xl: "max-w-5xl" };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4" role="presentation">
+  return createPortal(
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain touch-pan-y" role="presentation">
       <button className="absolute inset-0 cursor-default animate-dialog-backdrop bg-navy-950/55 backdrop-blur-[2px]" aria-label="Close dialog" onClick={onClose} />
-      <div className={cn("relative z-10 max-h-[92vh] w-full animate-dialog-panel overflow-y-auto rounded-t-3xl bg-white shadow-float sm:rounded-3xl", widths[size])} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
-          <div>
-            <h2 id="dialog-title" className="text-base font-bold text-navy-900">{title}</h2>
-            {description ? <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p> : null}
+      <div className="flex min-h-full items-end justify-center p-0 sm:items-center sm:p-4">
+        <div className={cn("relative z-10 my-auto max-h-[calc(100dvh-1rem)] w-full animate-dialog-panel overflow-y-auto overscroll-contain rounded-t-3xl bg-white shadow-float sm:max-h-[92dvh] sm:rounded-3xl", widths[size])} role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+          <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-line bg-white/95 px-5 py-4 backdrop-blur sm:px-6">
+            <div>
+              <h2 id="dialog-title" className="text-base font-bold text-navy-900">{title}</h2>
+              {description ? <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p> : null}
+            </div>
+            <button className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-navy-900" onClick={onClose} aria-label="Close dialog">
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-navy-900" onClick={onClose} aria-label="Close dialog">
-            <X className="h-4 w-4" />
-          </button>
+          <div className="p-5 sm:p-6">{children}</div>
         </div>
-        <div className="p-5 sm:p-6">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

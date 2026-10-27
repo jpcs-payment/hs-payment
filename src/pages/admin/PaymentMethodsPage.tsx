@@ -6,7 +6,7 @@ import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { formatCurrency, methodAccent } from "../../lib/utils";
 import { paymentMethodLogos } from "../../lib/paymentMethods";
-import { downloadCsv } from "../../lib/export";
+import { downloadCsv, downloadPdf } from "../../lib/export";
 import type { PaymentMethodConfig } from "../../types";
 
 const methods = ["Cash", "GCash", "MariBank"] as const;
@@ -46,13 +46,19 @@ export function PaymentMethodsPage() {
     }
   };
 
-  const exportMethods = () => downloadCsv(`jpcs-payment-methods-${new Date().toISOString().slice(0, 10)}.csv`, ["Method", "Enabled", "Account name", "Account number / reference", "Instructions", "QR configured"], data.paymentMethods.map((method) => [method.id, method.enabled ? "Yes" : "No", method.accountName, method.accountNumber, method.instructions, method.qrImage ? "Yes" : "No"]));
+  const methodExportHeaders = ["Method", "Enabled", "Account name", "Account number / reference", "Instructions", "QR configured"];
+  const methodExportRows = data.paymentMethods.map((method) => [method.id, method.enabled ? "Yes" : "No", method.accountName, method.accountNumber, method.instructions, method.qrImage ? "Yes" : "No"]);
+  const exportMethods = () => downloadCsv(`jpcs-payment-methods-${new Date().toISOString().slice(0, 10)}.csv`, methodExportHeaders, methodExportRows);
+  const exportMethodsPdf = () => downloadPdf({ filename: `jpcs-payment-methods-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Payment Methods", subtitle: `${data.paymentMethods.length} configured methods`, headers: methodExportHeaders, rows: methodExportRows, orientation: "landscape" });
 
   return (
     <div className="mx-auto max-w-[1250px] space-y-5">
       <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
         <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Methods</h2>
-        <Button size="sm" variant="outline" onClick={exportMethods} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+         <div className="flex flex-wrap gap-2">
+           <Button size="sm" variant="outline" onClick={exportMethods} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+           <Button size="sm" variant="outline" onClick={exportMethodsPdf} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export PDF</Button>
+         </div>
       </div>
       <Card className="overflow-hidden">
         <div className="flex flex-col justify-between gap-3 border-b border-line bg-navy-900 px-5 py-5 text-white sm:flex-row sm:items-center sm:px-6">

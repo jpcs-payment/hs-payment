@@ -10,7 +10,7 @@ import { Button, Card, ConfirmDialog, Dialog, Input, Select, Textarea } from "..
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { formatCurrency, formatDateTime, formatManilaDateTime, isOverdue } from "../../lib/utils";
-import { downloadPaymentCsv } from "../../lib/export";
+import { downloadPaymentCsv, downloadPaymentPdf } from "../../lib/export";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { PaymentMethod, PaymentRecord, PaymentStatus } from "../../types";
 
@@ -321,30 +321,34 @@ function LegacyPaymentsPage() {
               placeholder="Search payments"
             />
           </div>
-          {view === "review" ? (
+          <div className="grid min-w-0 grid-cols-2 gap-3 lg:contents">
+            {view === "review" ? (
+              <Select
+                className="min-w-0"
+                value={status}
+                onChange={(event) =>
+                  setStatus(event.target.value as typeof status)
+                }
+              >
+                {statusFilters.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </Select>
+            ) : (
+              <div className="flex h-11 min-w-0 items-center rounded-xl border border-line bg-mist px-3.5 text-xs font-semibold text-slate-500">
+                Overdue
+              </div>
+            )}
             <Select
-              value={status}
-              onChange={(event) =>
-                setStatus(event.target.value as typeof status)
-              }
+              className="min-w-0"
+              value={method}
+              onChange={(event) => setMethod(event.target.value as typeof method)}
             >
-              {statusFilters.map((item) => (
+              {methodFilters.map((item) => (
                 <option key={item}>{item}</option>
               ))}
             </Select>
-          ) : (
-            <div className="flex h-11 items-center rounded-xl border border-line bg-mist px-3.5 text-xs font-semibold text-slate-500">
-                Overdue
-            </div>
-          )}
-          <Select
-            value={method}
-            onChange={(event) => setMethod(event.target.value as typeof method)}
-          >
-            {methodFilters.map((item) => (
-              <option key={item}>{item}</option>
-            ))}
-          </Select>
+          </div>
         </div>
       </Card>
       {view === "review" ? (
@@ -490,14 +494,24 @@ export function PaymentsPage() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => downloadPaymentCsv(data.payments)}
-          disabled={!data.payments.length}
-        >
-          <Download className="h-3.5 w-3.5" /> Export CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => downloadPaymentCsv(data.payments)}
+            disabled={!data.payments.length}
+          >
+            <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => downloadPaymentPdf(data.payments)}
+            disabled={!data.payments.length}
+          >
+            <Download className="h-3.5 w-3.5" /> Export PDF
+          </Button>
+        </div>
       </div>
       <LegacyPaymentsPage />
     </div>

@@ -3,7 +3,7 @@ import { BarChart3, CheckCircle2, Clock3, Download, Filter, Search, UsersRound }
 import { Pagination } from "../../components/Pagination";
 import { Button, Card, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
-import { downloadCsv, downloadPaymentCsv } from "../../lib/export";
+import { downloadCsv, downloadPdf, downloadPaymentCsv, downloadPaymentPdf } from "../../lib/export";
 import { summarizeAllocations } from "../../lib/reporting";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
@@ -35,7 +35,10 @@ export function ReportsPage() {
   const visibleAllocationSummaries = getPageItems(allocationSummaries, allocationPage, PAGE_SIZE);
   const ledgerPageCount = getPageCount(payments.length, PAGE_SIZE);
   const visiblePayments = getPageItems(payments, ledgerPage, PAGE_SIZE);
-  const exportAllocations = () => downloadCsv(`jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.csv`, ["Recipient", "Allocated", "Collected", "Outstanding", "Pending", "Records"], allocationSummaries.map((summary) => [summary.recipient, summary.allocated, summary.collected, summary.outstanding, summary.pending, summary.recordCount]));
+  const allocationExportHeaders = ["Recipient", "Allocated", "Collected", "Outstanding", "Pending", "Records"];
+  const allocationExportRows = allocationSummaries.map((summary) => [summary.recipient, summary.allocated, summary.collected, summary.outstanding, summary.pending, summary.recordCount]);
+  const exportAllocations = () => downloadCsv(`jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.csv`, allocationExportHeaders, allocationExportRows);
+  const exportAllocationsPdf = () => downloadPdf({ filename: `jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Allocation Report", subtitle: `${allocationSummaries.length} recipients`, headers: allocationExportHeaders, rows: allocationExportRows });
 
   useEffect(() => {
     setAllocationPage(1);
@@ -56,7 +59,10 @@ export function ReportsPage() {
         <div>
           <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Reports</h2>
         </div>
-        <Button size="sm" onClick={() => downloadPaymentCsv(payments)} disabled={!payments.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => downloadPaymentCsv(payments)} disabled={!payments.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+          <Button size="sm" variant="outline" onClick={() => downloadPaymentPdf(payments)} disabled={!payments.length}><Download className="h-3.5 w-3.5" /> Export PDF</Button>
+        </div>
       </div>
 
       <section className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
@@ -69,7 +75,10 @@ export function ReportsPage() {
        <Card className="overflow-hidden">
          <div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6">
             <div><h3 className="text-base font-extrabold text-navy-900">Allocations</h3></div>
-           <Button variant="outline" size="sm" onClick={exportAllocations} disabled={!allocationSummaries.length}><Download className="h-3.5 w-3.5" /> Export allocations</Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={exportAllocations} disabled={!allocationSummaries.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
+              <Button variant="outline" size="sm" onClick={exportAllocationsPdf} disabled={!allocationSummaries.length}><Download className="h-3.5 w-3.5" /> Export PDF</Button>
+            </div>
          </div>
          {allocationSummaries.length ? <>
            <div className="hidden overflow-x-auto md:block">
@@ -88,11 +97,13 @@ export function ReportsPage() {
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><Filter className="h-3.5 w-3.5" /> Filters</div>
-          <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[720px]">
-            <div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search records" /></div>
-            <Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statusFilters.map((item) => <option key={item}>{item}</option>)}</Select>
-            <Select value={type} onChange={(event) => setType(event.target.value)}>{types.map((item) => <option key={item}>{item}</option>)}</Select>
-          </div>
+           <div className="grid gap-3 lg:min-w-[720px] lg:grid-cols-[minmax(0,1fr)_180px_180px]">
+             <div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search records" /></div>
+             <div className="grid min-w-0 grid-cols-2 gap-3 lg:contents">
+               <Select className="min-w-0" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statusFilters.map((item) => <option key={item}>{item}</option>)}</Select>
+               <Select className="min-w-0" value={type} onChange={(event) => setType(event.target.value)}>{types.map((item) => <option key={item}>{item}</option>)}</Select>
+             </div>
+           </div>
         </div>
       </Card>
 

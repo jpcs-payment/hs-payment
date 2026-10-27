@@ -5,7 +5,7 @@ import { Pagination } from "../../components/Pagination";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { createId, formatCurrency, formatManilaDateTime } from "../../lib/utils";
-import { downloadCsv } from "../../lib/export";
+import { downloadCsv, downloadPdf } from "../../lib/export";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { NewPaymentOfferingInput, PaymentAllocation, PaymentMethod, PaymentOffering, SchoolLevel } from "../../types";
 import jpcsLogo from "../../../jpcslogo/cropped_circle_image.png";
@@ -474,35 +474,23 @@ export function OfferingsPage() {
   const activeOfferings = data.offerings.filter(
     (offering) => !offering.archivedAt,
   );
-  const exportTypes = () =>
-    downloadCsv(
-      `jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`,
-      [
-        "Type",
-        "Slug",
-        "Description",
-        "Amount",
-        "Active",
-        "Payment methods",
-        "Pay Later methods",
-        "Applicable school levels",
-        "Deadline",
-      ],
-      activeOfferings.map((offering) => [
-        offering.name,
-        offering.slug,
-        offering.description,
-        offering.amount,
-        offering.active ? "Yes" : "No",
-        offering.availableMethods.join(" | "),
-        offering.payLaterMethods.join(" | "),
-        offering.applicableSchoolLevels.join(" | "),
-        offering.payLaterDeadlineAt,
-      ]),
-    );
+  const typeExportHeaders = ["Type", "Slug", "Description", "Amount", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"];
+  const typeExportRows = () => activeOfferings.map((offering) => [
+    offering.name,
+    offering.slug,
+    offering.description,
+    offering.amount,
+    offering.active ? "Yes" : "No",
+    offering.availableMethods.join(" | "),
+    offering.payLaterMethods.join(" | "),
+    offering.applicableSchoolLevels.join(" | "),
+    offering.payLaterDeadlineAt,
+  ]);
+  const exportTypes = () => downloadCsv(`jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.csv`, typeExportHeaders, typeExportRows());
+  const exportTypesPdf = () => downloadPdf({ filename: `jpcs-payment-types-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Payment Types", subtitle: `${activeOfferings.length} active types`, headers: typeExportHeaders, rows: typeExportRows(), orientation: "landscape" });
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button
           size="sm"
           variant="outline"
@@ -510,6 +498,14 @@ export function OfferingsPage() {
           disabled={!activeOfferings.length}
         >
           <Download className="h-3.5 w-3.5" /> Export CSV
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={exportTypesPdf}
+          disabled={!activeOfferings.length}
+        >
+          <Download className="h-3.5 w-3.5" /> Export PDF
         </Button>
       </div>
       <LegacyOfferingsPage />

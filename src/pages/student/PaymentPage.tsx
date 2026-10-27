@@ -35,11 +35,11 @@ const courseSuggestions = ["BS Computer Science", "BS Information Technology", "
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const stepOrder: PaymentStep[] = ["details", "type", "method", "review", "paid"];
 const stepLabels: Record<PaymentStep, string> = {
-  details: "Student Details",
-  type: "Payment Type",
-  method: "Payment Method",
-  review: "Review Payment",
-  paid: "Paid",
+  details: "01 · STUDENT DETAILS",
+  type: "02 · PAYMENT TYPE",
+  method: "03 · PAYMENT METHOD",
+  review: "04 · REVIEW PAYMENT",
+  paid: "05 · PAID",
 };
 
 const yearsFor = (level: SchoolLevel) => level === "Senior High School" ? seniorYears : level === "College" ? collegeYears : juniorYears;
@@ -284,12 +284,12 @@ export function PaymentPage() {
             {step === "method" ? <PaymentMethodStep form={form} availableMethods={availableMethods} method={form.method} methodConfig={methodConfig} paymentMode={form.paymentMode} selectedOffering={selectedOffering} isPayLater={isPayLater} isCashless={isCashless} errors={errors} proofImage={form.proofImage} onMethodChange={changeMethod} onModeChange={(mode) => updateForm("paymentMode", mode)} onChange={updateForm} onProofUpload={handleProofUpload} onProofClear={() => updateForm("proofImage", "")} /> : null}
             {step === "review" ? <ReviewPaymentStep form={form} selectedOffering={selectedOffering} isPayLater={isPayLater} summarySchoolDetails={summarySchoolDetails} submissionTime={submissionTime} /> : null}
           </Card>
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-            <div>{step !== "details" ? <Button type="button" variant="ghost" onClick={goBack}><ArrowLeft className="h-4 w-4" />Back</Button> : <Button type="button" variant="ghost" onClick={resetForm}>Clear form</Button>}</div>
-            <Button type="submit" size="lg" loading={submitting} disabled={step === "review" ? submitting : !availableMethods.length || !selectedOffering}>{step === "review" ? "Confirm and submit" : "Next"}<ArrowRight className="h-4 w-4" /></Button>
+          <div className="flex flex-row items-center justify-between gap-3">
+             <div>{step !== "details" ? <Button className="shrink-0 whitespace-nowrap" type="button" variant="ghost" onClick={goBack}><ArrowLeft className="h-4 w-4" />Back</Button> : <Button className="shrink-0 whitespace-nowrap" type="button" variant="ghost" onClick={resetForm}>Clear form</Button>}</div>
+             <Button className="shrink-0 whitespace-nowrap" type="submit" size="lg" loading={submitting} disabled={step === "review" ? submitting : !availableMethods.length || !selectedOffering}>{step === "review" ? "Confirm and submit" : "Next"}<ArrowRight className="h-4 w-4" /></Button>
           </div>
         </form>
-         <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(selectedOffering?.amount ?? 0)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Student" value={form.fullName || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><Check className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">05 . Paid</p><p className="mt-1 text-[10px] text-slate-400">{step === "paid" ? "Payment submitted" : "After approval"}</p></div></div><p className="mt-4 text-xs leading-5 text-slate-500">{step === "paid" ? "Your payment status is shown in the confirmation above." : "Your receipt and ticket are available after approval."}</p></Card></aside>
+         <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(selectedOffering?.amount ?? 0)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Student" value={form.fullName || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><Check className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">05 · PAID</p><p className="mt-1 text-[10px] text-slate-400">{step === "paid" ? "Payment submitted" : "After approval"}</p></div></div><p className="mt-4 text-xs leading-5 text-slate-500">{step === "paid" ? "Your payment status is shown in the confirmation above." : "Your receipt and ticket are available after approval."}</p></Card></aside>
       </div>}
     </div>
   );
@@ -334,10 +334,10 @@ function ModeOption({ mode, selected, disabled = false, deadline, onClick }: { m
 
 function FormSection({ eyebrow, children }: { icon: typeof ShieldCheck; eyebrow: string; title: string; description: string; children: ReactNode }) {
   const labels: Record<string, string> = {
-    "01 · Student details": "01 . Student Details",
-    "02 · Payment type": "02 . Payment Type",
-    "03 · Payment method": "03 . Payment Method",
-    "04 · Review payment": "04 . Review Payment",
+    "01 · Student details": stepLabels.details,
+    "02 · Payment type": stepLabels.type,
+    "03 · Payment method": stepLabels.method,
+    "04 · Review payment": stepLabels.review,
   };
   const methodSection = eyebrow === "03 · Payment method";
   return <div className={`payment-step-section ${methodSection ? "payment-method-section" : ""}`}><h3 className="mb-5 text-sm font-extrabold text-navy-900 sm:mb-6">{labels[eyebrow] ?? eyebrow}</h3>{children}</div>;

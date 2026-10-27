@@ -3,7 +3,7 @@ export const BRANDING = {
   organization: "JPCS - LCC",
   fullOrganization: "Junior Philippines Computer Studies",
   systemName: "JPCS - LCC Payment Portal",
-  projectLead: "Special Project Lead - John Benedict M. Javier",
+  projectLead: "Special Project Lead - John Benedict Javier",
   qrPrefix: "JPCS-LCC-TICKET:",
 } as const;
 

@@ -8,7 +8,7 @@ import { useToast } from "../../components/Toast";
 import { Avatar, Button, Card, ConfirmDialog, Dialog, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
-import { downloadCsv } from "../../lib/export";
+import { downloadCsv, downloadPdf } from "../../lib/export";
 import { getLatestPayment } from "../../data/seed";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { PaymentRecord, SchoolLevel, Student } from "../../types";
@@ -98,37 +98,22 @@ function PayersWorkspace() {
     setPage((current) => Math.min(current, pageCount));
   }, [pageCount]);
 
-  const exportPayers = () =>
-    downloadCsv(
-      `jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`,
-      [
-        "Payer",
-        "Email",
-        "School level",
-        "Year level",
-        "Strand",
-        "Course",
-        "Payment count",
-        "Approved total",
-      ],
-      activeStudents.map((student) => {
-        const payments = data.payments.filter(
-          (payment) => payment.studentId === student.id,
-        );
-        return [
-          student.name,
-          student.email,
-          student.schoolLevel,
-          student.yearLevel,
-          student.strand,
-          student.course,
-          payments.length,
-          payments
-            .filter((payment) => payment.status === "Approved")
-            .reduce((total, payment) => total + payment.amount, 0),
-        ];
-      }),
-    );
+  const payerExportHeaders = ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"];
+  const payerExportRows = () => activeStudents.map((student) => {
+    const payments = data.payments.filter((payment) => payment.studentId === student.id);
+    return [
+      student.name,
+      student.email,
+      student.schoolLevel,
+      student.yearLevel,
+      student.strand,
+      student.course,
+      payments.length,
+      payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0),
+    ];
+  });
+  const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, payerExportHeaders, payerExportRows());
+  const exportPayersPdf = () => downloadPdf({ filename: `jpcs-payers-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Payers", subtitle: `${activeStudents.length} active payer records`, headers: payerExportHeaders, rows: payerExportRows(), orientation: "landscape" });
   const handleArchive = async () => {
     if (!archiveId) return;
     setArchiveLoading(true);
@@ -173,6 +158,14 @@ function PayersWorkspace() {
             disabled={!activeStudents.length}
           >
             <Download className="h-3.5 w-3.5" /> Export CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={exportPayersPdf}
+            disabled={!activeStudents.length}
+          >
+            <Download className="h-3.5 w-3.5" /> Export PDF
           </Button>
         </div>
       </div>
