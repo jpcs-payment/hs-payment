@@ -360,16 +360,7 @@ function LegacyOfferingsPage() {
     <div className="mx-auto max-w-[1280px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-            Payment catalog
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
-            Payment types
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Create payment types, choose who can pay, and optionally accept Pay
-            Later reservations.
-          </p>
+          <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Payment types</h2>
         </div>
         <Button onClick={() => setDraft(emptyDraft())}>
           <Plus className="h-4 w-4" /> Add payment
@@ -565,7 +556,7 @@ function OfferingCard({ offering, index, onEdit }: { offering: PaymentOffering; 
 }
 
 function CatalogStat({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Check }) {
-  return <Card className="min-w-0 p-2.5 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{String(value).padStart(2, "0")}</p></div><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-9 sm:w-9 sm:rounded-xl"><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-2.5 sm:p-3.5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-1.5 text-xl font-extrabold text-navy-900 sm:mt-2 sm:text-2xl">{String(value).padStart(2, "0")}</p></div><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-8 sm:w-8"><Icon className="h-3.5 w-3.5" /></span></div></Card>;
 }
 
 function PaymentTypeCard({ offering, index, onEdit }: { offering: PaymentOffering; index: number; onEdit: () => void }) {

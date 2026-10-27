@@ -157,20 +157,14 @@ function PayersWorkspace() {
     <div className="mx-auto max-w-[1400px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-            People & accounts
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
+          <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
             Payers
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Search payer details and inspect their payment history.
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
             <UsersRound className="h-4 w-4" />
-            {activeStudents.length} active payer records
+            {activeStudents.length} payers
           </div>
           <Button
             size="sm"
@@ -329,5 +323,5 @@ function Info({ label, value, icon: Icon }: { label: string; value: string; icon
 }
 
 function AdminStat({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <Card className="min-w-0 p-3 sm:p-5"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold tracking-tight text-navy-900 sm:mt-3 sm:text-2xl">{value}</p><p className="mt-1 break-words text-[10px] text-slate-400 sm:text-[11px]">{detail}</p></Card>;
+  return <Card className="min-w-0 p-2.5 sm:p-3.5"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-1.5 text-xl font-extrabold tracking-tight text-navy-900 sm:mt-2 sm:text-2xl">{value}</p></Card>;
 }

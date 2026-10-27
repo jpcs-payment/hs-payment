@@ -114,23 +114,7 @@ export function ArchivePage() {
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
-      <div className="flex items-start gap-3">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-navy-50 text-navy-700">
-          <Archive className="h-5 w-5" />
-        </span>
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-            Record management
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
-            Archive
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Archived records are hidden from active lists and the public payment
-            flow. Restore them whenever they are needed again.
-          </p>
-        </div>
-      </div>
+      <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Archive className="h-5 w-5" /></span><h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Archive</h2></div>
       <ArchiveSection
         title="Archived payers"
         icon={UsersRound}

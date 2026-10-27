@@ -2,7 +2,7 @@ import { Moon, Sun } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useTheme } from "../context/ThemeContext";
 
-export function ThemeToggle({ surface = "light", className }: { surface?: "light" | "dark"; className?: string }) {
+export function ThemeToggle({ surface = "light", className, iconOnly = false }: { surface?: "light" | "dark"; className?: string; iconOnly?: boolean }) {
   const { theme, toggleTheme } = useTheme();
   const isDark = theme === "dark";
 
@@ -10,7 +10,7 @@ export function ThemeToggle({ surface = "light", className }: { surface?: "light
     <button
       type="button"
       className={cn(
-        "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-700",
+        `inline-flex h-9 items-center gap-2 rounded-xl border text-[11px] font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-700 ${iconOnly ? "w-9 justify-center px-0" : "px-3"}`,
         surface === "dark" ? "border-white/15 bg-white/10 text-blue-100 hover:bg-white/15 hover:text-white" : "border-line bg-white/80 text-slate-600 hover:bg-slate-100 hover:text-navy-900",
         className,
       )}
@@ -19,7 +19,7 @@ export function ThemeToggle({ surface = "light", className }: { surface?: "light
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
     >
       {isDark ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-      <span className="hidden sm:inline">{isDark ? "Light mode" : "Dark mode"}</span>
+      {!iconOnly ? <span className="hidden sm:inline">{isDark ? "Light mode" : "Dark mode"}</span> : null}
     </button>
   );
 }

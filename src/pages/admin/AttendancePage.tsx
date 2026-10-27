@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { AlertCircle, Camera, CheckCircle2, ClipboardCheck, Clock3, Download, RotateCcw, ScanLine, Search, StopCircle, Ticket, UsersRound, XCircle } from "lucide-react";
+import { AlertCircle, Camera, CheckCircle2, ClipboardCheck, Clock3, Download, RotateCcw, ScanLine, Search, StopCircle, SwitchCamera, Ticket, UsersRound, XCircle } from "lucide-react";
 import { BrowserQRCodeReader, type IScannerControls } from "@zxing/browser";
 import { Pagination } from "../../components/Pagination";
 import { Card, Button, ConfirmDialog, FieldLabel, Input, Select } from "../../components/ui";
@@ -23,6 +23,7 @@ const manilaDateTimeParts = (value: string) => Object.fromEntries(manilaDateTime
 const manilaDateKey = (value: string) => { const parts = manilaDateTimeParts(value); return `${parts.year}-${parts.month}-${parts.day}`; };
 const manilaTimeKey = (value: string) => { const parts = manilaDateTimeParts(value); return `${parts.hour}:${parts.minute}`; };
 const PAGE_SIZE = 10;
+type CameraFacingMode = "user" | "environment";
 
 export function AttendancePage() {
   const { data, checkInTicket, undoAttendance } = useApp();
@@ -37,6 +38,8 @@ export function AttendancePage() {
   const lastDecodedRef = useRef("");
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState("");
+  const [cameraFacingMode, setCameraFacingMode] = useState<CameraFacingMode>("environment");
+  const [useFacingMode, setUseFacingMode] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [scanLoading, setScanLoading] = useState(false);
@@ -126,7 +129,7 @@ export function AttendancePage() {
     try {
       const devices = await BrowserQRCodeReader.listVideoInputDevices();
       setCameraDevices(devices);
-      if (!selectedDevice && devices[0]) setSelectedDevice(devices[0].deviceId);
+      setSelectedDevice((current) => current && devices.some((device) => device.deviceId === current) ? current : devices[0]?.deviceId ?? "");
     } catch {
       setCameraDevices([]);
     }
@@ -207,8 +210,8 @@ export function AttendancePage() {
     }
   };
 
-  const startScanner = async () => {
-    if (startingRef.current || isScanning || !videoRef.current) return;
+  const startScanner = async (requestedFacing = cameraFacingMode, forceFacing = false) => {
+    if (startingRef.current || controlsRef.current || !videoRef.current) return;
     startingRef.current = true;
     const generation = ++scannerGenerationRef.current;
     setCameraStarting(true);
@@ -216,14 +219,22 @@ export function AttendancePage() {
     setResult(null);
     lastDecodedRef.current = "";
     try {
-      const devices = cameraDevices.length
-        ? cameraDevices
-        : await BrowserQRCodeReader.listVideoInputDevices();
-      if (devices.length) setCameraDevices(devices);
-      const deviceId = selectedDevice || devices[0]?.deviceId;
+      const listedDevices = await BrowserQRCodeReader.listVideoInputDevices();
+      const devices = listedDevices.length ? listedDevices : cameraDevices;
+      if (listedDevices.length) {
+        setCameraDevices(listedDevices);
+        setSelectedDevice((current) => current && listedDevices.some((device) => device.deviceId === current) ? current : listedDevices[0]?.deviceId ?? "");
+      }
+      const useRequestedFacing = forceFacing || useFacingMode;
+      const deviceId = selectedDevice && devices.some((device) => device.deviceId === selectedDevice) ? selectedDevice : devices[0]?.deviceId;
+      const videoConstraints: MediaTrackConstraints = useRequestedFacing
+        ? { facingMode: { ideal: requestedFacing } }
+        : deviceId
+          ? { deviceId: { exact: deviceId } }
+          : { facingMode: { ideal: requestedFacing } };
       if (!readerRef.current) readerRef.current = new BrowserQRCodeReader();
-      const controls = await readerRef.current.decodeFromVideoDevice(
-        deviceId,
+      const controls = await readerRef.current.decodeFromConstraints(
+        { video: videoConstraints },
         videoRef.current,
         (decoded, _error, scannerControls) => {
           if (
@@ -266,7 +277,17 @@ export function AttendancePage() {
   const handleDeviceChange = (deviceId: string) => {
     if (deviceId !== selectedDevice && (isScanning || startingRef.current))
       stopScanner();
+    setUseFacingMode(false);
     setSelectedDevice(deviceId);
+  };
+
+  const handleFacingChange = (facingMode: CameraFacingMode) => {
+    setCameraFacingMode(facingMode);
+    setUseFacingMode(true);
+    if (isScanning || startingRef.current) {
+      stopScanner();
+      window.setTimeout(() => void startScanner(facingMode, true), 0);
+    }
   };
 
   const resetScan = () => {
@@ -355,17 +376,7 @@ export function AttendancePage() {
     <div className="mx-auto max-w-[1450px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">
-            Event operations
-          </p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">
-            Attendance scanner
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-            Scan approved tickets or unpaid Pay Later QR codes. Attendance is
-            recorded immediately while unpaid reservations remain visible for
-            payment follow-up.
-          </p>
+          <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Attendance</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
@@ -407,21 +418,24 @@ export function AttendancePage() {
         />
       </section>
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <ScannerCard
-          cameraDevices={cameraDevices}
-          cameraError={cameraError}
-          cameraStarting={cameraStarting}
-          isScanning={isScanning}
-          manualValue={manualValue}
-          selectedDevice={selectedDevice}
-          scanLoading={scanLoading}
-          videoRef={videoRef}
-          onManualChange={setManualValue}
-          onDeviceChange={handleDeviceChange}
-          onStart={() => void startScanner()}
-          onStop={stopScanner}
-          onScan={() => void handleScan(manualValue)}
-        />
+        <div className="space-y-3">
+          {cameraDevices.length > 1 ? <CameraFacingToggle value={cameraFacingMode} disabled={cameraStarting} onChange={handleFacingChange} /> : null}
+          <ScannerCard
+            cameraDevices={cameraDevices}
+            cameraError={cameraError}
+            cameraStarting={cameraStarting}
+            isScanning={isScanning}
+            manualValue={manualValue}
+            selectedDevice={selectedDevice}
+            scanLoading={scanLoading}
+            videoRef={videoRef}
+            onManualChange={setManualValue}
+            onDeviceChange={handleDeviceChange}
+            onStart={() => void startScanner()}
+            onStop={stopScanner}
+            onScan={() => void handleScan(manualValue)}
+          />
+        </div>
         <div className="space-y-6">
           <ScanResult result={result} onReset={resetScan} />
           <ScanHistory history={scanHistory} />
@@ -484,6 +498,10 @@ interface ScannerCardProps {
   onStart: () => void;
   onStop: () => void;
   onScan: () => void;
+}
+
+function CameraFacingToggle({ value, disabled, onChange }: { value: CameraFacingMode; disabled: boolean; onChange: (value: CameraFacingMode) => void }) {
+  return <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-white p-2 shadow-soft"><button type="button" className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold transition ${value === "environment" ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-navy-50 hover:text-navy-900"}`} onClick={() => onChange("environment")} disabled={disabled} aria-pressed={value === "environment"}><SwitchCamera className="h-4 w-4" />Back camera</button><button type="button" className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold transition ${value === "user" ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-navy-50 hover:text-navy-900"}`} onClick={() => onChange("user")} disabled={disabled} aria-pressed={value === "user"}><SwitchCamera className="h-4 w-4" />Front camera</button></div>;
 }
 
 function ScannerCard({ cameraDevices, cameraError, cameraStarting, isScanning, manualValue, selectedDevice, scanLoading, videoRef, onManualChange, onDeviceChange, onStart, onStop, onScan }: ScannerCardProps) {
@@ -636,5 +654,5 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 function AttendanceStat({ label, value, detail, icon: Icon }: { label: string; value: number; detail: string; icon: typeof Ticket }) {
-  return <Card className="min-w-0 p-3 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{String(value).padStart(2, "0")}</p><p className="mt-1 break-words text-[10px] text-slate-400 sm:text-[11px]">{detail}</p></div><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-9 sm:w-9 sm:rounded-xl"><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-2.5 sm:p-3.5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-1.5 text-xl font-extrabold text-navy-900 sm:mt-2 sm:text-2xl">{String(value).padStart(2, "0")}</p></div><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-8 sm:w-8"><Icon className="h-3.5 w-3.5" /></span></div></Card>;
 }

@@ -36,6 +36,105 @@ body {
   overflow-x: visible;
 }
 
+.payment-form nav[aria-label="Payment progress"] ol {
+  width: 100%;
+}
+
+@media (max-width: 639px) {
+  [class~="min-w-[620px]"] {
+    min-width: 0 !important;
+    width: 100%;
+  }
+
+  .payment-form nav[aria-label="Payment progress"] {
+    overflow: visible;
+  }
+
+  .payment-form nav[aria-label="Payment progress"] ol {
+    min-width: 0 !important;
+  }
+
+  .payment-form nav[aria-label="Payment progress"] ol > li > div > div > span:first-child {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .payment-form nav[aria-label="Payment progress"] ol > li > div > div > span:nth-child(2) {
+    max-width: 4rem;
+    font-size: 9px;
+    line-height: 1.1;
+  }
+
+  .payment-form nav[aria-label="Payment progress"] ol > li > div > span {
+    min-width: 0.25rem;
+  }
+
+  .payment-form .payment-method-section > .grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  .payment-form .payment-method-option {
+    padding: 0.5rem;
+  }
+
+  .payment-form .payment-method-option > span:last-child {
+    display: none;
+  }
+
+  .payment-form .payment-method-option > span:first-child > span:first-child {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.75rem;
+  }
+
+  .payment-form .payment-method-option > span:first-child > span:last-child {
+    width: 1rem;
+    height: 1rem;
+  }
+
+  .payment-form .payment-method-option > span:nth-child(2) {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    line-height: 1rem;
+    white-space: nowrap;
+  }
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .admin-shell [class~="hidden"][class~="md:block"] {
+    display: none !important;
+  }
+
+  .admin-shell [class~="md:hidden"] {
+    display: block !important;
+  }
+
+  .admin-shell [class*="md:grid-cols-[minmax(0,1.6fr)"] {
+    display: block !important;
+  }
+
+  .admin-shell [class*="md:grid-cols-[minmax(0,1.6fr)"] > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .admin-shell [class*="md:grid-cols-[minmax(0,1.6fr)"] > div:first-child {
+    margin-top: 0;
+  }
+
+  .admin-shell [class*="md:grid-cols-[minmax(0,1.6fr)"] [class~="md:hidden"] {
+    display: inline !important;
+  }
+
+  .admin-shell [class*="md:grid-cols-[minmax(0,1.6fr)"] [class~="md:block"] {
+    display: block !important;
+  }
+}
+
 /* The only aspect-video viewport is the attendance scanner, which uses a square frame. */
 .aspect-video {
   aspect-ratio: 1 / 1;

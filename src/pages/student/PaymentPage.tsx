@@ -35,10 +35,10 @@ const courseSuggestions = ["BS Computer Science", "BS Information Technology", "
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const stepOrder: PaymentStep[] = ["details", "type", "method", "review", "paid"];
 const stepLabels: Record<PaymentStep, string> = {
-  details: "Student details",
-  type: "Payment type",
-  method: "Payment method",
-  review: "Review payment",
+  details: "Student Details",
+  type: "Payment Type",
+  method: "Payment Method",
+  review: "Review Payment",
   paid: "Paid",
 };
 
@@ -271,8 +271,7 @@ export function PaymentPage() {
   return (
     <div className="payment-form mx-auto min-w-0 max-w-[1180px] space-y-6 overflow-x-hidden">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">JPCS payment portal</p><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Complete your payment</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Finish one step at a time. Your payment status is updated only after the JPCS admin team confirms it.</p></div>
-        <span className="self-start rounded-full bg-navy-50 px-3 py-2 text-[10px] font-bold text-navy-700 sm:self-auto">No account required</span>
+         <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">JPCS payment portal</p><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Complete your payment</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Your payment status is updated only after the JPCS admin team confirms it.</p></div>
       </div>
 
       <StepIndicator currentStep={step} />
@@ -290,7 +289,7 @@ export function PaymentPage() {
             <Button type="submit" size="lg" loading={submitting} disabled={step === "review" ? submitting : !availableMethods.length || !selectedOffering}>{step === "review" ? "Confirm and submit" : "Next"}<ArrowRight className="h-4 w-4" /></Button>
           </div>
         </form>
-        <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(selectedOffering?.amount ?? 0)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Student" value={form.fullName || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><ShieldCheck className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">What happens next?</p><p className="mt-1 text-[10px] text-slate-400">A simple review process</p></div></div><ol className="mt-5 space-y-4">{(isPayLater ? ["Your reservation is saved as Not Paid Yet.", "Pay before the deadline shown in your email.", "An admin marks payment received and activates your attendance QR."] : ["Review your details before submitting.", "The payment is saved for admin review.", "After confirmation, your receipt and QR ticket are emailed."]).map((item, index) => <li key={item} className="flex gap-3"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-navy-50 text-[10px] font-extrabold text-navy-700">{index + 1}</span><span className="text-xs leading-5 text-slate-500">{item}</span></li>)}</ol></Card></aside>
+         <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(selectedOffering?.amount ?? 0)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Student" value={form.fullName || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><Check className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">05 . Paid</p><p className="mt-1 text-[10px] text-slate-400">{step === "paid" ? "Payment submitted" : "After approval"}</p></div></div><p className="mt-4 text-xs leading-5 text-slate-500">{step === "paid" ? "Your payment status is shown in the confirmation above." : "Your receipt and ticket are available after approval."}</p></Card></aside>
       </div>}
     </div>
   );
@@ -333,8 +332,15 @@ function ModeOption({ mode, selected, disabled = false, deadline, onClick }: { m
   return <button type="button" aria-pressed={selected} disabled={disabled} className={`flex min-h-12 items-center justify-between gap-3 rounded-xl border px-3.5 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-700 disabled:cursor-not-allowed disabled:opacity-45 ${selected ? "border-navy-700 bg-navy-900 text-white shadow-[0_0_0_3px_rgba(96,165,250,0.18)]" : "border-line bg-white text-slate-600 hover:border-navy-300 hover:bg-navy-50"}`} onClick={onClick}><span><span className="block text-xs font-extrabold">{mode === "PayLater" ? "Pay Later" : "Pay Now"}</span><span className={`mt-1 block text-[10px] ${selected ? "text-blue-100/70" : "text-slate-400"}`}>{mode === "PayLater" ? deadline ? `Due ${formatManilaDateTime(deadline)}` : "Not configured" : "Submit for review now"}</span></span>{selected ? <Check className="h-4 w-4 shrink-0 text-blue-200" /> : null}</button>;
 }
 
-function FormSection({ icon: Icon, eyebrow, title, description, children }: { icon: typeof ShieldCheck; eyebrow: string; title: string; description: string; children: ReactNode }) {
-  return <div><div className="mb-6 flex items-start gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Icon className="h-5 w-5" /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">{eyebrow}</p><h3 className="mt-1 text-base font-extrabold text-navy-900">{title}</h3><p className="mt-1 text-xs leading-5 text-slate-500">{description}</p></div></div>{children}</div>;
+function FormSection({ eyebrow, children }: { icon: typeof ShieldCheck; eyebrow: string; title: string; description: string; children: ReactNode }) {
+  const labels: Record<string, string> = {
+    "01 · Student details": "01 . Student Details",
+    "02 · Payment type": "02 . Payment Type",
+    "03 · Payment method": "03 . Payment Method",
+    "04 · Review payment": "04 . Review Payment",
+  };
+  const methodSection = eyebrow === "03 · Payment method";
+  return <div className={`payment-step-section ${methodSection ? "payment-method-section" : ""}`}><h3 className="mb-5 text-sm font-extrabold text-navy-900 sm:mb-6">{labels[eyebrow] ?? eyebrow}</h3>{children}</div>;
 }
 
 function FormField({ label, required, error, children, className = "" }: { label: string; required?: boolean; error?: string; children: ReactNode; className?: string }) {

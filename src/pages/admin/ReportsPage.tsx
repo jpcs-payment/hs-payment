@@ -54,9 +54,7 @@ export function ReportsPage() {
     <div className="mx-auto max-w-[1450px] space-y-6">
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">Operations overview</p>
-          <h2 className="mt-2 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Reports</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Compare attendance with payment state and export the complete payment ledger.</p>
+          <h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Reports</h2>
         </div>
         <Button size="sm" onClick={() => downloadPaymentCsv(payments)} disabled={!payments.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
       </div>
@@ -70,7 +68,7 @@ export function ReportsPage() {
 
        <Card className="overflow-hidden">
          <div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6">
-           <div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Allocation report</p><h3 className="mt-1 text-base font-extrabold text-navy-900">Separate destination totals</h3><p className="mt-1 text-xs leading-5 text-slate-500">Rejected payments are excluded from all allocation totals.</p></div>
+            <div><h3 className="text-base font-extrabold text-navy-900">Allocations</h3></div>
            <Button variant="outline" size="sm" onClick={exportAllocations} disabled={!allocationSummaries.length}><Download className="h-3.5 w-3.5" /> Export allocations</Button>
          </div>
          {allocationSummaries.length ? <>
@@ -89,7 +87,7 @@ export function ReportsPage() {
 
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><Filter className="h-3.5 w-3.5" /> Filter report</div>
+           <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><Filter className="h-3.5 w-3.5" /> Filters</div>
           <div className="grid gap-3 sm:grid-cols-3 lg:min-w-[720px]">
             <div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search records" /></div>
             <Select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statusFilters.map((item) => <option key={item}>{item}</option>)}</Select>
@@ -99,7 +97,7 @@ export function ReportsPage() {
       </Card>
 
       <Card className="overflow-hidden">
-        <div className="flex flex-col justify-between gap-2 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Payment ledger</p><h3 className="mt-1 text-base font-extrabold text-navy-900">All filtered records</h3></div><span className="text-xs font-semibold text-slate-400">{payments.length} record{payments.length === 1 ? "" : "s"}</span></div>
+         <div className="flex flex-col justify-between gap-2 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6"><div><h3 className="text-base font-extrabold text-navy-900">Ledger</h3></div><span className="text-xs font-semibold text-slate-400">{payments.length} record{payments.length === 1 ? "" : "s"}</span></div>
          {payments.length ? <>
            <div className="hidden overflow-x-auto md:block">
              <table className="w-full min-w-[1050px] text-left">
@@ -118,7 +116,7 @@ export function ReportsPage() {
 }
 
 function ReportStat({ label, value, detail, icon: Icon }: { label: string; value: number | string; detail: string; icon: typeof BarChart3 }) {
-  return <Card className="min-w-0 p-3 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 break-words text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{value}</p><p className="mt-1 break-words text-[10px] text-slate-400 sm:text-[11px]">{detail}</p></div><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-9 sm:w-9 sm:rounded-xl"><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-2.5 sm:p-3.5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-1.5 break-words text-xl font-extrabold text-navy-900 sm:mt-2 sm:text-2xl">{value}</p></div><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-8 sm:w-8"><Icon className="h-3.5 w-3.5" /></span></div></Card>;
 }
 
 function ReportDetail({ label, value }: { label: string; value: string }) {
