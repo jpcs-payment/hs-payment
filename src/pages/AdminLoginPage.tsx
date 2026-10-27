@@ -5,6 +5,7 @@ import { Button, FieldLabel, Input } from "../components/ui";
 import { OrganizationLogo } from "../components/OrganizationLogo";
 import { useApp } from "../context/AppContext";
 import { useToast } from "../components/Toast";
+import { BRANDING } from "../lib/branding";
 
 export function AdminLoginPage() {
   const { session, signInAdmin } = useApp();
@@ -45,6 +46,7 @@ export function AdminLoginPage() {
               <div className="mt-14 max-w-md xl:mt-24">
                 <h1 className="text-3xl font-extrabold leading-[1.05] tracking-[-0.05em] sm:text-5xl">Keep every payment and entry point in sync.</h1>
                 <p className="mt-6 max-w-sm text-sm leading-7 text-blue-100/70">A focused workspace for the JPCS - LCC team to verify collections, issue tickets, and welcome attendees.</p>
+                <div className="mt-8 space-y-1 text-[10px] font-medium leading-5 text-blue-100/60"><p>{BRANDING.credits[0]}</p><p>{BRANDING.credits[1]}</p></div>
               </div>
             </div>
           </section>
