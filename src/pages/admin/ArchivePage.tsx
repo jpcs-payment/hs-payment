@@ -107,6 +107,8 @@ export function ArchivePage() {
           <Pagination
             page={payerPage}
             pageCount={payerPageCount}
+            totalItems={archivedPayers.length}
+            pageSize={PAGE_SIZE}
             onPageChange={setPayerPage}
           />
         }
@@ -156,6 +158,8 @@ export function ArchivePage() {
           <Pagination
             page={typePage}
             pageCount={typePageCount}
+            totalItems={archivedTypes.length}
+            pageSize={PAGE_SIZE}
             onPageChange={setTypePage}
           />
         }
@@ -239,7 +243,10 @@ function ArchiveSection({
           {pagination}
         </>
       ) : (
-        <p className="p-8 text-center text-sm text-slate-500">{empty}</p>
+        <>
+          <p className="p-8 text-center text-sm text-slate-500">{empty}</p>
+          {pagination}
+        </>
       )}
     </Card>
   );

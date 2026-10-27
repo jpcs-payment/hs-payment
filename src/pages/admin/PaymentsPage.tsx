@@ -272,7 +272,7 @@ function LegacyPaymentsPage() {
           </Button>
         </div>
       </div>
-      <section className="grid gap-4 sm:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-4 sm:grid-cols-4">
         <ReviewStat
           label="Awaiting review"
           value={pendingCount}
@@ -367,14 +367,17 @@ function LegacyPaymentsPage() {
                 />
               ))}
             </div>
-            <Pagination page={reviewPage} pageCount={reviewPageCount} onPageChange={setReviewPage} />
+            <Pagination page={reviewPage} pageCount={reviewPageCount} totalItems={reviewPayments.length} pageSize={PAGE_SIZE} onPageChange={setReviewPage} />
           </>
         ) : (
-          <EmptyState
-            icon={Search}
-            title="No payments found"
-            description="Try a different search, status, or method filter."
-          />
+          <>
+            <EmptyState
+              icon={Search}
+              title="No payments found"
+              description="Try a different search, status, or method filter."
+            />
+            <Pagination page={reviewPage} pageCount={reviewPageCount} totalItems={reviewPayments.length} pageSize={PAGE_SIZE} onPageChange={setReviewPage} />
+          </>
         )
       ) : (
         <>
@@ -383,7 +386,7 @@ function LegacyPaymentsPage() {
             onView={(payment) => setSelectedId(payment.id)}
             onMark={(payment) => setMarkId(payment.id)}
           />
-          <Pagination page={unpaidPage} pageCount={unpaidPageCount} onPageChange={setUnpaidPage} />
+          <Pagination page={unpaidPage} pageCount={unpaidPageCount} totalItems={unpaidPayments.length} pageSize={PAGE_SIZE} onPageChange={setUnpaidPage} />
         </>
       )}
       <Dialog
@@ -510,7 +513,49 @@ export function PaymentsPage() {
 
 function PayLaterTable({ payments, onView, onMark }: { payments: PaymentRecord[]; onView: (payment: PaymentRecord) => void; onMark: (payment: PaymentRecord) => void }) {
   if (!payments.length) return <EmptyState icon={Clock3} title="No unpaid reservations" description="Pay Later reservations will appear here until an admin marks them received." />;
-  return <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-5 py-4">Student</th><th className="px-5 py-4">Type</th><th className="px-5 py-4">Method</th><th className="px-5 py-4">Amount</th><th className="px-5 py-4">Deadline</th><th className="px-5 py-4">State</th><th className="px-5 py-4">Actions</th></tr></thead><tbody className="divide-y divide-line">{payments.map((payment) => { const overdue = isOverdue(payment.paymentDeadlineAt); return <tr key={payment.id} className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 text-slate-400">{payment.reference}</p></td><td className="px-5 py-4"><p className="font-semibold text-navy-800">{payment.offeringName}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.method}</td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(payment.amount)}</td><td className="px-5 py-4"><p className={overdue ? "font-bold text-coral" : "font-semibold text-slate-600"}>{payment.paymentDeadlineAt ? formatManilaDateTime(payment.paymentDeadlineAt) : "-"}</p>{overdue ? <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-coral"><AlertTriangle className="h-3 w-3" /> Overdue</p> : null}</td><td className="px-5 py-4"><span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Not Paid Yet</span></td><td className="px-5 py-4"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => onView(payment)}><Eye className="h-3.5 w-3.5" /> View</Button><Button size="sm" onClick={() => onMark(payment)}>Mark received</Button></div></td></tr>; })}</tbody></table></div></Card>;
+  return (
+    <Card className="overflow-hidden">
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full min-w-[860px] text-left">
+          <thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
+            <tr><th className="px-5 py-4">Student</th><th className="px-5 py-4">Type</th><th className="px-5 py-4">Method</th><th className="px-5 py-4">Amount</th><th className="px-5 py-4">Deadline</th><th className="px-5 py-4">State</th><th className="px-5 py-4">Actions</th></tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {payments.map((payment) => {
+              const overdue = isOverdue(payment.paymentDeadlineAt);
+              return <tr key={payment.id} className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 text-slate-400">{payment.reference}</p></td><td className="px-5 py-4"><p className="font-semibold text-navy-800">{payment.offeringName}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.method}</td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(payment.amount)}</td><td className="px-5 py-4"><p className={overdue ? "font-bold text-coral" : "font-semibold text-slate-600"}>{payment.paymentDeadlineAt ? formatManilaDateTime(payment.paymentDeadlineAt) : "-"}</p>{overdue ? <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-coral"><AlertTriangle className="h-3 w-3" /> Overdue</p> : null}</td><td className="px-5 py-4"><span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Not Paid Yet</span></td><td className="px-5 py-4"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => onView(payment)}><Eye className="h-3.5 w-3.5" /> View</Button><Button size="sm" onClick={() => onMark(payment)}>Mark received</Button></div></td></tr>;
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-3 p-4 md:hidden">
+        {payments.map((payment) => {
+          const overdue = isOverdue(payment.paymentDeadlineAt);
+          return <article key={payment.id} className="rounded-2xl border border-line p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="break-words text-sm font-bold text-navy-900">{payment.studentName}</p>
+                <p className="mt-1 break-words text-xs text-slate-400">{payment.email}</p>
+                <p className="mt-1 break-words font-mono text-[10px] text-slate-500">{payment.reference}</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Not Paid Yet</span>
+            </div>
+            <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+              <Detail label="Type" value={payment.offeringName} />
+              <Detail label="Method" value={payment.method} />
+              <Detail label="Amount" value={formatCurrency(payment.amount)} />
+              <Detail label="Deadline" value={payment.paymentDeadlineAt ? formatManilaDateTime(payment.paymentDeadlineAt) : "-"} />
+            </dl>
+            {overdue ? <p className="mt-3 flex items-center gap-1 text-[10px] font-bold text-coral"><AlertTriangle className="h-3 w-3" /> Overdue</p> : null}
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <Button size="sm" variant="outline" onClick={() => onView(payment)}><Eye className="h-3.5 w-3.5" /> View</Button>
+              <Button size="sm" onClick={() => onMark(payment)}>Mark received</Button>
+            </div>
+          </article>;
+        })}
+      </div>
+    </Card>
+  );
 }
 
 function LegacyPayLaterTable({ payments, onView, onMark }: { payments: PaymentRecord[]; onView: (payment: PaymentRecord) => void; onMark: (payment: PaymentRecord) => void }) {
@@ -694,5 +739,5 @@ function Detail({ label, value }: { label: string; value: string }) {
 
 function ReviewStat({ label, value, tone, icon: Icon }: { label: string; value: number; tone: "amber" | "mint" | "coral"; icon: typeof ReceiptText }) {
   const colors = { amber: "bg-amber-50 text-amber-700", mint: "bg-emerald-50 text-emerald-700", coral: "bg-red-50 text-coral" };
-  return <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className="mt-3 text-2xl font-extrabold text-navy-900">{String(value).padStart(2, "0")}</p><p className="mt-1 text-[11px] text-slate-400">Payment records</p></div><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${colors[tone]}`}><Icon className="h-4 w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-3 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{String(value).padStart(2, "0")}</p><p className="mt-1 text-[10px] text-slate-400 sm:text-[11px]">Payment records</p></div><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${colors[tone]} sm:h-9 sm:w-9 sm:rounded-xl`}><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
 }

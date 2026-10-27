@@ -339,7 +339,7 @@ function LegacyOfferingsPage() {
           <Plus className="h-4 w-4" /> Add payment
         </Button>
       </div>
-      <section className="grid gap-4 sm:grid-cols-3">
+      <section className="grid grid-cols-3 gap-2 sm:gap-4">
         <CatalogStat
           label="Total types"
           value={
@@ -386,18 +386,21 @@ function LegacyOfferingsPage() {
               </div>
             ))}
           <div className="md:col-span-2 xl:col-span-3">
-            <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
+            <Pagination page={page} pageCount={pageCount} totalItems={activeOfferings.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
           </div>
         </div>
-      ) : (
-        <Card className="p-10 text-center">
-          <p className="text-sm font-bold text-navy-900">
-            No payment types yet
-          </p>
-          <p className="mt-2 text-xs text-slate-500">
-            Add the first payment type to make it available on the public form.
-          </p>
-        </Card>
+       ) : (
+         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-soft">
+           <Card className="rounded-none border-0 p-10 text-center shadow-none">
+             <p className="text-sm font-bold text-navy-900">
+               No payment types yet
+             </p>
+             <p className="mt-2 text-xs text-slate-500">
+               Add the first payment type to make it available on the public form.
+             </p>
+           </Card>
+           <Pagination page={page} pageCount={pageCount} totalItems={activeOfferings.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+         </div>
       )}
       <Dialog
         open={Boolean(draft)}
@@ -495,11 +498,11 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
         <div className="flex items-end"><button type="button" className={`flex h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition ${draft.active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-line bg-slate-50 text-slate-500"}`} onClick={() => updateDraft("active", !draft.active)}><span>{draft.active ? "Visible on public form" : "Hidden from public form"}</span>{draft.active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
       </div>
       <div><FieldLabel required>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Admission payment for the JPCS Bootcamp." /></div>
-      <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
-      <div><FieldLabel required>Available for school levels</FieldLabel><div className="flex min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto pb-1">{schoolLevels.map((level) => <ToggleChoice key={level} label={level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College"} title={level} selected={draft.applicableSchoolLevels.includes(level)} onClick={() => toggleSchoolLevel(level)} />)}</div></div>
+      <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
+      <div><FieldLabel required>Available for school levels</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{schoolLevels.map((level) => <ToggleChoice key={level} label={level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College"} title={level} selected={draft.applicableSchoolLevels.includes(level)} onClick={() => toggleSchoolLevel(level)} />)}</div></div>
       <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><FieldLabel>Pay Later options</FieldLabel><p className="text-xs leading-5 text-navy-800">Students receive an attendance QR immediately. Admins can scan it at the event while the reservation remains Not Paid Yet.</p></div><span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-bold text-navy-700">Optional</span></div>
-        <div className="mt-4 flex min-w-0 max-w-full flex-nowrap gap-2 overflow-x-auto pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.payLaterMethods.includes(method)} disabled={!draft.availableMethods.includes(method)} onClick={() => togglePayLater(method)} />)}</div>
+        <div className="mt-4 flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.payLaterMethods.includes(method)} disabled={!draft.availableMethods.includes(method)} onClick={() => togglePayLater(method)} />)}</div>
         {draft.payLaterMethods.length ? <div className="mt-4 max-w-sm"><FieldLabel required>Pay Later deadline (Asia/Manila)</FieldLabel><Input type="datetime-local" value={toLocalDateTimeInput(draft.payLaterDeadlineAt)} onChange={(event) => updateDraft("payLaterDeadlineAt", event.target.value ? new Date(event.target.value).toISOString() : undefined)} /><p className="mt-1.5 text-[11px] text-navy-700">Reservations remain visible as overdue after this time; admins can still mark them paid.</p></div> : <p className="mt-3 text-[11px] text-navy-700">Enable at least one method to show the deadline input.</p>}
       </div>
        <div className="rounded-2xl border border-line bg-mist p-4"><div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><FieldLabel required>Allocation destinations</FieldLabel><p className="text-xs leading-5 text-slate-500">Use peso amounts. The total must equal {formatCurrency(draft.amount || 0)}.</p></div><Button type="button" size="sm" variant="outline" onClick={addAllocation}><Plus className="h-3.5 w-3.5" /> Add destination</Button></div><div className="mt-4 space-y-3">{draft.allocations.map((allocation, index) => <div key={allocation.draftId} className="flex min-w-0 flex-col gap-2 sm:flex-row"><Input className="min-w-0 flex-1" value={allocation.recipient} onChange={(event) => updateAllocation(index, { recipient: event.target.value })} placeholder="Recipient, e.g. JPCS" aria-label={`Allocation recipient ${index + 1}`} /><div className="flex min-w-0 gap-2 sm:w-44"><Input className="min-w-0 flex-1" type="number" min="0.01" step="0.01" value={allocation.amount} onChange={(event) => updateAllocation(index, { amount: Number(event.target.value) })} aria-label={`Allocation amount ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => removeAllocation(index)} disabled={draft.allocations.length === 1} aria-label={`Remove allocation ${index + 1}`}><Trash2 className="h-4 w-4" /></button></div></div>)}</div><div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-xs"><span className="font-semibold text-slate-500">Allocation total</span><span className={`font-extrabold ${Math.round(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0) * 100) === Math.round(draft.amount * 100) ? "text-mint" : "text-coral"}`}>{formatCurrency(draft.allocations.reduce((sum, allocation) => sum + Number(allocation.amount), 0))}</span></div></div>
@@ -518,7 +521,7 @@ function OfferingCard({ offering, index, onEdit }: { offering: PaymentOffering; 
 }
 
 function CatalogStat({ label, value, icon: Icon }: { label: string; value: number; icon: typeof Check }) {
-  return <Card className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className="mt-3 text-2xl font-extrabold text-navy-900">{String(value).padStart(2, "0")}</p></div><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Icon className="h-4 w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-2.5 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.08em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{String(value).padStart(2, "0")}</p></div><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-9 sm:w-9 sm:rounded-xl"><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
 }
 
 function PaymentTypeCard({ offering, index, onEdit }: { offering: PaymentOffering; index: number; onEdit: () => void }) {

@@ -380,7 +380,7 @@ export function AttendancePage() {
           ) : null}
         </div>
       </div>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
         <AttendanceStat
           label="Eligible tickets"
           value={filteredAttendance.length}
@@ -449,6 +449,8 @@ export function AttendancePage() {
         onUndo={(payment) => setUndoId(payment.id)}
         page={page}
         pageCount={pageCount}
+        totalItems={filteredAttendance.length}
+        pageSize={PAGE_SIZE}
         onPageChange={setPage}
       />
       <ConfirmDialog
@@ -498,12 +500,16 @@ function AttendanceList({
   onUndo,
   page,
   pageCount,
+  totalItems,
+  pageSize,
   onPageChange,
 }: {
   payments: PaymentRecord[];
   onUndo: (payment: PaymentRecord) => void;
   page: number;
   pageCount: number;
+  totalItems: number;
+  pageSize: number;
   onPageChange: (page: number) => void;
 }) {
   if (!payments.length)
@@ -520,6 +526,7 @@ function AttendanceList({
         <div className="p-8 text-center text-sm text-slate-500">
           No tickets match the current filters.
         </div>
+        <Pagination page={page} pageCount={pageCount} totalItems={totalItems} pageSize={pageSize} onPageChange={onPageChange} />
       </Card>
     );
   return (
@@ -597,7 +604,7 @@ function AttendanceList({
           </div>
         ))}
       </div>
-      <Pagination page={page} pageCount={pageCount} onPageChange={onPageChange} />
+      <Pagination page={page} pageCount={pageCount} totalItems={totalItems} pageSize={pageSize} onPageChange={onPageChange} />
     </Card>
   );
 }
@@ -629,5 +636,5 @@ function Detail({ label, value }: { label: string; value: string }) {
 }
 
 function AttendanceStat({ label, value, detail, icon: Icon }: { label: string; value: number; detail: string; icon: typeof Ticket }) {
-  return <Card className="p-5"><div className="flex items-start justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className="mt-3 text-2xl font-extrabold text-navy-900">{String(value).padStart(2, "0")}</p><p className="mt-1 text-[11px] text-slate-400">{detail}</p></div><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Icon className="h-4 w-4" /></span></div></Card>;
+  return <Card className="min-w-0 p-3 sm:p-5"><div className="flex min-w-0 items-start justify-between gap-1 sm:gap-3"><div className="min-w-0"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold text-navy-900 sm:mt-3 sm:text-2xl">{String(value).padStart(2, "0")}</p><p className="mt-1 break-words text-[10px] text-slate-400 sm:text-[11px]">{detail}</p></div><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700 sm:h-9 sm:w-9 sm:rounded-xl"><Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" /></span></div></Card>;
 }

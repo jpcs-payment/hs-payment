@@ -36,6 +36,11 @@ body {
   overflow-x: visible;
 }
 
+/* The only aspect-video viewport is the attendance scanner, which uses a square frame. */
+.aspect-video {
+  aspect-ratio: 1 / 1;
+}
+
 button,
 input,
 select,

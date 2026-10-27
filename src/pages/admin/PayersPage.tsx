@@ -182,7 +182,7 @@ function PayersWorkspace() {
           </Button>
         </div>
       </div>
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
         <AdminStat
           label="Total payers"
           value={String(activeStudents.length)}
@@ -253,14 +253,17 @@ function PayersWorkspace() {
               />
             ))}
           </div>
-          <Pagination page={page} pageCount={pageCount} onPageChange={setPage} />
+          <Pagination page={page} pageCount={pageCount} totalItems={filteredStudents.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
         </Card>
       ) : (
-        <EmptyState
-          icon={UsersRound}
-          title="No payers found"
-          description="Try a different search or filter."
-        />
+        <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-soft">
+          <EmptyState
+            icon={UsersRound}
+            title="No payers found"
+            description="Try a different search or filter."
+          />
+          <Pagination page={page} pageCount={pageCount} totalItems={filteredStudents.length} pageSize={PAGE_SIZE} onPageChange={setPage} />
+        </div>
       )}
       <Dialog
         open={Boolean(selectedStudent)}
@@ -326,5 +329,5 @@ function Info({ label, value, icon: Icon }: { label: string; value: string; icon
 }
 
 function AdminStat({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <Card className="p-5"><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{label}</p><p className="mt-3 text-2xl font-extrabold tracking-tight text-navy-900">{value}</p><p className="mt-1 text-[11px] text-slate-400">{detail}</p></Card>;
+  return <Card className="min-w-0 p-3 sm:p-5"><p className="break-words text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400 sm:text-[10px] sm:tracking-[0.12em]">{label}</p><p className="mt-2 text-xl font-extrabold tracking-tight text-navy-900 sm:mt-3 sm:text-2xl">{value}</p><p className="mt-1 break-words text-[10px] text-slate-400 sm:text-[11px]">{detail}</p></Card>;
 }
