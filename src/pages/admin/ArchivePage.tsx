@@ -11,12 +11,19 @@ import { formatDateTime } from "../../lib/utils";
 const PAGE_SIZE = 10;
 
 export function ArchivePage() {
-  const { data, restorePayer, restoreOffering, deletePayerPermanently } =
+  const {
+    data,
+    restorePayer,
+    restoreOffering,
+    deletePayerPermanently,
+    deleteOfferingPermanently,
+  } =
     useApp();
   const { pushToast } = useToast();
   const [payerPage, setPayerPage] = useState(1);
   const [typePage, setTypePage] = useState(1);
   const [deletePayerId, setDeletePayerId] = useState<string | null>(null);
+  const [deleteOfferingId, setDeleteOfferingId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const archivedPayers = data.students.filter((student) => student.archivedAt);
   const archivedTypes = data.offerings.filter(
@@ -28,6 +35,9 @@ export function ArchivePage() {
   const visibleTypes = getPageItems(archivedTypes, typePage, PAGE_SIZE);
   const payerToDelete = deletePayerId
     ? (archivedPayers.find((payer) => payer.id === deletePayerId) ?? null)
+    : null;
+  const offeringToDelete = deleteOfferingId
+    ? (archivedTypes.find((offering) => offering.id === deleteOfferingId) ?? null)
     : null;
 
   useEffect(() => {
@@ -72,6 +82,29 @@ export function ArchivePage() {
       pushToast({
         tone: "error",
         title: "Could not permanently delete payer",
+        message: error instanceof Error ? error.message : "Try again.",
+      });
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const handlePermanentDeleteOffering = async () => {
+    if (!deleteOfferingId) return;
+    setDeleteLoading(true);
+    try {
+      await deleteOfferingPermanently(deleteOfferingId);
+      setDeleteOfferingId(null);
+      pushToast({
+        tone: "success",
+        title: "Payment type permanently deleted",
+        message:
+          "The payment type, linked payments, email records, payer records without other payments, and uploaded files were removed.",
+      });
+    } catch (error) {
+      pushToast({
+        tone: "error",
+        title: "Could not permanently delete payment type",
         message: error instanceof Error ? error.message : "Try again.",
       });
     } finally {
@@ -181,13 +214,22 @@ export function ArchivePage() {
                 {offering.description}
               </p>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => void restore("type", offering.id)}
-            >
-              <RotateCcw className="h-3.5 w-3.5" /> Restore
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => void restore("type", offering.id)}
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Restore
+              </Button>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() => setDeleteOfferingId(offering.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete permanently
+              </Button>
+            </div>
           </div>
         ))}
       </ArchiveSection>
@@ -200,6 +242,20 @@ export function ArchivePage() {
           payerToDelete
             ? `This permanently deletes ${payerToDelete.name}, every linked payment including paid, unpaid, and rejected records, attendance history, report data, email records, and uploaded proof files. This cannot be undone.`
             : "This permanently deletes the payer and every connected record. This cannot be undone."
+        }
+        confirmLabel="Delete permanently"
+        danger
+        loading={deleteLoading}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteOfferingId)}
+        onClose={() => setDeleteOfferingId(null)}
+        onConfirm={() => void handlePermanentDeleteOffering()}
+        title="Delete payment type permanently?"
+        description={
+          offeringToDelete
+            ? `This permanently deletes ${offeringToDelete.name}, every linked payment, email record, payer records without other payments, and uploaded files. This cannot be undone.`
+            : "This permanently deletes the payment type and its connected records. This cannot be undone."
         }
         confirmLabel="Delete permanently"
         danger

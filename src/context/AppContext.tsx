@@ -41,6 +41,7 @@ interface AppContextValue {
   saveOffering: (offering: PaymentOffering, image?: PaymentOfferingImageUpdate) => Promise<void>;
   archiveOffering: (offeringId: string) => Promise<void>;
   restoreOffering: (offeringId: string) => Promise<void>;
+  deleteOfferingPermanently: (offeringId: string) => Promise<void>;
   archivePayer: (payerId: string) => Promise<void>;
   restorePayer: (payerId: string) => Promise<void>;
   deletePayerPermanently: (payerId: string) => Promise<void>;
@@ -589,6 +590,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const archiveOffering = async (offeringId: string) => setOfferingArchived(offeringId, new Date().toISOString());
   const restoreOffering = async (offeringId: string) => setOfferingArchived(offeringId, null);
 
+  const deleteOfferingPermanently = async (offeringId: string) => {
+    const client = requireSupabase();
+    const offering = data.offerings.find((item) => item.id === offeringId);
+    if (!offering) return;
+    if (!offering.archivedAt) throw new Error("Only archived payment types can be permanently deleted.");
+
+    const offeringPayments = data.payments.filter((payment) => payment.offeringId === offeringId);
+    const proofPaths = offeringPayments
+      .filter((payment) => payment.proofPath)
+      .map((payment) => payment.proofPath as string);
+    const payerIds = new Set(offeringPayments.map((payment) => payment.studentId));
+    const remainingPayments = data.payments.filter((payment) => payment.offeringId !== offeringId);
+    const remainingPayerIds = new Set(remainingPayments.map((payment) => payment.studentId));
+
+    for (let offset = 0; offset < proofPaths.length; offset += 1000) {
+      const { error: proofError } = await client.storage.from(paymentProofBucket).remove(proofPaths.slice(offset, offset + 1000));
+      if (proofError) throw proofError;
+    }
+    if (offering.imagePath) {
+      const { error: imageError } = await client.storage.from(offeringImageBucket).remove([offering.imagePath]);
+      if (imageError) throw imageError;
+    }
+
+    const deleteOffering = () => client.rpc("hs_delete_offering_permanently", { p_offering_id: offeringId });
+    const { error } = await deleteOffering();
+    if (error) {
+      const { error: retryError } = await deleteOffering();
+      if (retryError) throw error;
+    }
+
+    setData((current) => ({
+      ...current,
+      offerings: current.offerings.filter((item) => item.id !== offeringId),
+      payments: current.payments.filter((payment) => payment.offeringId !== offeringId),
+      students: current.students.filter((student) => !payerIds.has(student.id) || remainingPayerIds.has(student.id)),
+    }));
+  };
+
   const setPayerArchived = async (payerId: string, archivedAt: string | null) => {
     const client = requireSupabase();
     const { error } = await client.from("hs-payers").update({ archived_at: archivedAt }).eq("id", payerId);
@@ -727,7 +766,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, deleteOfferingPermanently, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, resetDemo }}>
       {children}
     </AppContext.Provider>
   );
