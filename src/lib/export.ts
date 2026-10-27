@@ -104,11 +104,13 @@ export const downloadPdf = ({ filename, title, subtitle, headers, rows, orientat
   };
   const drawFooter = () => {
     document.setDrawColor(218, 226, 236);
-    document.line(margin, pageHeight - 30, pageWidth - margin, pageHeight - 30);
+    document.line(margin, pageHeight - 42, pageWidth - margin, pageHeight - 42);
     document.setFont("helvetica", "normal");
-    document.setFontSize(8);
+    document.setFontSize(7);
     document.setTextColor(112, 128, 148);
-    document.text(BRANDING.projectLead, margin, pageHeight - 18);
+    document.text(BRANDING.credits[0], margin, pageHeight - 30);
+    document.text(BRANDING.credits[1], margin, pageHeight - 18);
+    document.setFontSize(8);
     document.text(`Generated ${generatedAt}`, pageWidth / 2, pageHeight - 18, { align: "center" });
     document.text(`Page ${document.getNumberOfPages()}`, pageWidth - margin, pageHeight - 18, { align: "right" });
   };
@@ -116,7 +118,7 @@ export const downloadPdf = ({ filename, title, subtitle, headers, rows, orientat
   drawHeader();
   autoTable(document, {
     startY: 84,
-    margin: { top: 84, right: margin, bottom: 42, left: margin },
+    margin: { top: 84, right: margin, bottom: 54, left: margin },
     head: [headers],
     body: rows.map((row) => row.map(pdfText)),
     theme: "grid",
