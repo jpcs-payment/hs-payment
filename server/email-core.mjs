@@ -12,6 +12,23 @@ const config = () => ({
   serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
 });
 
+const deliveryAttempts = new Map();
+const deliveryWindowMs = 10 * 60 * 1000;
+const maxDeliveryAttempts = 3;
+
+const isRateLimited = (key) => {
+  const now = Date.now();
+  const previous = deliveryAttempts.get(key) ?? [];
+  const recent = previous.filter((timestamp) => now - timestamp < deliveryWindowMs);
+  if (recent.length >= maxDeliveryAttempts) {
+    deliveryAttempts.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  deliveryAttempts.set(key, recent);
+  return false;
+};
+
 export const isEmailConfigured = () => {
   const { apiKey, from } = config();
   return Boolean(apiKey && isEmail(from));
@@ -83,59 +100,153 @@ const validatePayment = (payment, payLater) => {
 
 const verifyPaymentRecord = async (payment, payLater) => {
   const { supabaseUrl, serviceRoleKey } = config();
-  if (!supabaseUrl || !serviceRoleKey) return "Server payment verification is not configured. Set SUPABASE_SERVICE_ROLE_KEY for deployed email functions.";
+  const reject = (error) => ({ error, payment: null });
+  if (!supabaseUrl || !serviceRoleKey) return reject("Server payment verification is not configured. Set SUPABASE_SERVICE_ROLE_KEY for deployed email functions.");
   const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
   const paymentResponse = await fetch(`${supabaseUrl}/rest/v1/hs-payments?id=eq.${encodeURIComponent(payment.id)}&select=*`, { headers });
-  if (!paymentResponse.ok) return "The payment could not be verified.";
+  if (!paymentResponse.ok) return reject("The payment could not be verified.");
   const paymentRows = await paymentResponse.json();
   const storedPayment = Array.isArray(paymentRows) ? paymentRows[0] : undefined;
-  if (!storedPayment) return "The payment could not be verified.";
+  if (!storedPayment) return reject("The payment could not be verified.");
   const payerResponse = await fetch(`${supabaseUrl}/rest/v1/hs-payers?id=eq.${encodeURIComponent(storedPayment.payer_id)}&select=email,name`, { headers });
-  if (!payerResponse.ok) return "The payer could not be verified.";
+  if (!payerResponse.ok) return reject("The payer could not be verified.");
   const payerRows = await payerResponse.json();
   const payer = Array.isArray(payerRows) ? payerRows[0] : undefined;
   const isMatchingRecord = payer
     && String(payer.email).toLowerCase() === payment.email.trim().toLowerCase()
+    && String(payer.name).trim().toLowerCase() === payment.studentName.trim().toLowerCase()
     && storedPayment.reference === payment.reference
+    && storedPayment.offering_name === payment.offeringName
+    && storedPayment.method === payment.method
     && String(storedPayment.ticket_id ?? "") === payment.ticketId
     && String(storedPayment.ticket_qr_value ?? "") === payment.ticketQrValue
     && Number(storedPayment.amount) === Number(payment.amount)
+    && String(storedPayment.school_level ?? "") === String(payment.schoolLevel ?? "")
+    && String(storedPayment.year_level ?? "") === String(payment.yearLevel ?? "")
+    && String(storedPayment.strand ?? "") === String(payment.strand ?? "")
+    && String(storedPayment.course ?? "") === String(payment.course ?? "")
     && storedPayment.payment_mode === (payLater ? "PayLater" : "PayNow")
     && storedPayment.status === (payLater ? "Pending" : "Approved")
     && storedPayment.payment_state === (payLater ? "Unpaid" : "Paid");
-  if (!isMatchingRecord) return "The payment details no longer match the stored record.";
-  if (!payLater && storedPayment.receipt_number !== payment.receiptNumber) return "The receipt details no longer match the stored record.";
-  return null;
+  if (!isMatchingRecord) return reject("The payment details no longer match the stored record.");
+  if (!payLater && storedPayment.receipt_number !== payment.receiptNumber) return reject("The receipt details no longer match the stored record.");
+  if (!payLater && String(storedPayment.approved_at ?? "") !== String(payment.approvedAt ?? "")) return reject("The approval details no longer match the stored record.");
+  if (payLater && new Date(storedPayment.payment_deadline_at).getTime() !== new Date(payment.paymentDeadlineAt).getTime()) return reject("The Pay Later deadline no longer matches the stored record.");
+  const canonicalPayment = {
+    ...payment,
+    id: String(storedPayment.id),
+    studentName: String(payer.name),
+    email: String(payer.email),
+    offeringName: String(storedPayment.offering_name),
+    amount: Number(storedPayment.amount),
+    reference: String(storedPayment.reference),
+    method: storedPayment.method,
+    allocations: storedPayment.allocations,
+    schoolLevel: storedPayment.school_level,
+    yearLevel: String(storedPayment.year_level),
+    strand: storedPayment.strand ?? undefined,
+    course: storedPayment.course ?? undefined,
+    paymentMode: storedPayment.payment_mode,
+    paymentState: storedPayment.payment_state,
+    paymentDeadlineAt: storedPayment.payment_deadline_at ?? undefined,
+    status: storedPayment.status,
+    receiptNumber: storedPayment.receipt_number ?? undefined,
+    ticketId: storedPayment.ticket_id ?? undefined,
+    ticketQrValue: storedPayment.ticket_qr_value ?? undefined,
+    approvedAt: storedPayment.approved_at ?? undefined,
+  };
+  return { error: null, payment: canonicalPayment };
 };
 
-const sendEmail = async (payment, payLater, { verify = false } = {}) => {
+const verifyAdminAuthorization = async (authorization) => {
+  const { supabaseUrl, serviceRoleKey } = config();
+  if (!supabaseUrl || !serviceRoleKey) return "Server admin verification is not configured.";
+  if (typeof authorization !== "string" || !/^Bearer\s+\S+$/i.test(authorization)) return "Admin authentication is required.";
+  const authResponse = await fetch(`${supabaseUrl}/auth/v1/user`, { headers: { apikey: serviceRoleKey, Authorization: authorization } });
+  if (!authResponse.ok) return "Admin authentication is invalid.";
+  const user = await authResponse.json();
+  const email = typeof user?.email === "string" ? user.email.trim() : "";
+  if (!email) return "Admin authentication is invalid.";
+  const adminResponse = await fetch(`${supabaseUrl}/rest/v1/hs-admins?email=eq.${encodeURIComponent(email)}&select=email`, { headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` } });
+  if (!adminResponse.ok) return "Admin access could not be verified.";
+  const admins = await adminResponse.json();
+  return Array.isArray(admins) && admins.length ? null : "Only a registered JPCS admin can send approval emails.";
+};
+
+const beginEmailDelivery = async (payment) => {
+  const { supabaseUrl, serviceRoleKey } = config();
+  if (!supabaseUrl || !serviceRoleKey) return { error: "Server email delivery tracking is not configured." };
+  const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
+  const since = new Date(Date.now() - deliveryWindowMs).toISOString();
+  const attemptsResponse = await fetch(`${supabaseUrl}/rest/v1/hs-email-deliveries?payment_id=eq.${encodeURIComponent(payment.id)}&created_at=gte.${encodeURIComponent(since)}&select=id`, { headers });
+  if (!attemptsResponse.ok) return { error: "Email delivery tracking is unavailable." };
+  const attempts = await attemptsResponse.json();
+  if (Array.isArray(attempts) && attempts.length >= maxDeliveryAttempts) return { limited: true };
+  const insertResponse = await fetch(`${supabaseUrl}/rest/v1/hs-email-deliveries`, {
+    method: "POST",
+    headers: { ...headers, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ payment_id: payment.id, provider: "Brevo", status: "Failed", error_message: "Delivery attempt started" }),
+  });
+  if (!insertResponse.ok) return { error: "Email delivery tracking is unavailable." };
+  const inserted = await insertResponse.json();
+  return { id: Array.isArray(inserted) ? inserted[0]?.id : undefined };
+};
+
+const finishEmailDelivery = async (attemptId, status, providerMessageId, errorMessage) => {
+  if (!attemptId) return;
+  const { supabaseUrl, serviceRoleKey } = config();
+  if (!supabaseUrl || !serviceRoleKey) return;
+  await fetch(`${supabaseUrl}/rest/v1/hs-email-deliveries?id=eq.${encodeURIComponent(attemptId)}`, {
+    method: "PATCH",
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ status, provider_message_id: providerMessageId, error_message: errorMessage }),
+  });
+};
+
+const sendEmail = async (payment, payLater, { verify = false, requireAdmin = false, authorization, requestKey } = {}) => {
+  const rateKey = `${payLater ? "pay-later" : "approval"}:${requestKey || payment?.id || payment?.email || "unknown"}`;
+  if (isRateLimited(rateKey)) return { status: 429, body: { error: "Too many email delivery attempts. Try again later." } };
   const validationError = validatePayment(payment, payLater);
   if (validationError) return { status: 400, body: { error: validationError } };
+  if (requireAdmin) {
+    const adminError = await verifyAdminAuthorization(authorization);
+    if (adminError) return { status: 403, body: { error: adminError } };
+  }
+  let deliveryPayment = payment;
   if (verify) {
     const verificationError = await verifyPaymentRecord(payment, payLater);
-    if (verificationError) return { status: 403, body: { error: verificationError } };
+    if (verificationError.error) return { status: 403, body: { error: verificationError.error } };
+    deliveryPayment = verificationError.payment;
   }
+  const deliveryAttempt = await beginEmailDelivery(deliveryPayment);
+  if (deliveryAttempt.error) return { status: 503, body: { error: deliveryAttempt.error } };
+  if (deliveryAttempt.limited) return { status: 429, body: { error: "Too many email delivery attempts. Try again later." } };
   const { apiKey, from, fromName, replyTo } = config();
   if (!apiKey || !isEmail(from)) return { status: 503, body: { error: "Brevo is not configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL in the deployment environment." } };
 
-  const qrBuffer = await QRCode.toBuffer(payment.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
+  const qrBuffer = await QRCode.toBuffer(deliveryPayment.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: { accept: "application/json", "api-key": apiKey, "content-type": "application/json" },
     body: JSON.stringify({
       sender: { name: fromName, email: from },
-      to: [{ email: payment.email.trim(), name: payment.studentName.trim() }],
+      to: [{ email: deliveryPayment.email.trim(), name: deliveryPayment.studentName.trim() }],
       replyTo: { email: replyTo },
-      subject: `Your JPCS - LCC ${payment.offeringName} ${payLater ? "Pay Later reservation" : "confirmation"}`,
-      htmlContent: createHtml(payment, payLater),
-      textContent: createText(payment, payLater),
+      subject: `Your JPCS - LCC ${deliveryPayment.offeringName} ${payLater ? "Pay Later reservation" : "confirmation"}`,
+      htmlContent: createHtml(deliveryPayment, payLater),
+      textContent: createText(deliveryPayment, payLater),
       attachment: [{ content: qrBuffer.toString("base64"), name: "jpcs-lcc-attendance-qr.png" }],
       tags: ["jpcs-payment", payLater ? "pay-later" : "film-showing"],
     }),
   });
   let body = {};
   try { body = await response.json(); } catch { body = {}; }
-  if (!response.ok) return { status: 502, body: { error: typeof body?.message === "string" ? body.message : "Brevo rejected the email." } };
+  if (!response.ok) {
+    const message = typeof body?.message === "string" ? body.message : "Brevo rejected the email.";
+    await finishEmailDelivery(deliveryAttempt.id, "Failed", null, message);
+    return { status: 502, body: { error: message } };
+  }
+  await finishEmailDelivery(deliveryAttempt.id, "Sent", body?.messageId ?? null, null);
   return { status: 200, body: { emailId: body?.messageId ?? null } };
 };
 

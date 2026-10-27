@@ -121,6 +121,7 @@ export interface Session {
 }
 
 export interface NewPaymentInput {
+  idempotencyKey?: string;
   studentId?: string;
   studentName: string;
   email: string;

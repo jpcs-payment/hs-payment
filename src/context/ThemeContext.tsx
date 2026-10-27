@@ -11,10 +11,6 @@ interface ThemeContextValue {
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 const themeStorageKey = "jpcs-theme";
 
-function systemTheme(): Theme {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
 function storedTheme(): Theme | null {
   if (typeof window === "undefined") return null;
   try {
@@ -34,7 +30,7 @@ function applyTheme(theme: Theme) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    const initialTheme = storedTheme() ?? systemTheme();
+    const initialTheme = storedTheme() ?? "light";
     applyTheme(initialTheme);
     return initialTheme;
   });

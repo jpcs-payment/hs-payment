@@ -59,6 +59,7 @@ const createUuid = () => {
 
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const offeringImageBucket = "hs-offering-images";
+const paymentProofBucket = "hs-payment-proofs";
 const maxOfferingImageBytes = 5 * 1024 * 1024;
 const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -241,7 +242,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const students = (payersResponse.data ?? []).map(mapPayer);
       const payers = new Map(students.map((payer) => [payer.id, payer]));
       const offeringMap = new Map(offerings.map((offering) => [offering.id, offering]));
-      const payments = (paymentsResponse.data ?? []).map((payment) => mapPayment(payment, payers, offeringMap));
+      const paymentRows = paymentsResponse.data ?? [];
+      const proofPaths = [...new Set(paymentRows.map((payment) => typeof payment.proof_path === "string" ? payment.proof_path : "").filter(Boolean))];
+      const proofUrls = new Map<string, string>();
+      if (proofPaths.length) {
+        const signedResponse = await client.storage.from(paymentProofBucket).createSignedUrls(proofPaths, 86400);
+        if (signedResponse.error) throw signedResponse.error;
+        signedResponse.data?.forEach((item, index) => {
+          if (item.signedUrl) proofUrls.set(proofPaths[index], item.signedUrl);
+        });
+      }
+      const payments = paymentRows.map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap));
       setData({ students, offerings, paymentMethods, payments, developers: [] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
@@ -324,7 +335,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const submitPayment = async (input: NewPaymentInput) => {
-    const client = requireSupabase();
     const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.archivedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
@@ -334,87 +344,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!offering.payLaterDeadlineAt || new Date(offering.payLaterDeadlineAt).getTime() <= Date.now()) throw new Error("The Pay Later deadline has passed or is not configured.");
     }
 
-    const paymentId = createUuid();
-    const payerId = createUuid();
-    const isPayLater = input.paymentMode === "PayLater";
-    const ticketId = isPayLater ? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}` : undefined;
-    const ticketQrValue = ticketId ? createTicketQrValue(ticketId) : undefined;
-    let proofPath: string | undefined;
-    let proofUrl: string | undefined;
-
-    if (input.proofImage && !isPayLater) {
-      const { blob, mime } = dataUrlToBlob(input.proofImage, "proof image");
-      const extension = mime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
-      proofPath = `${paymentId}/${createUuid()}.${extension}`;
-      const { error: uploadError } = await client.storage.from("hs-payment-proofs").upload(proofPath, blob, { contentType: mime, upsert: false });
-      if (uploadError) throw uploadError;
-      proofUrl = client.storage.from("hs-payment-proofs").getPublicUrl(proofPath).data.publicUrl;
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 30000);
+    let response: Response;
+    try {
+      response = await fetch("/api/submit-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payment: {
+          idempotencyKey: input.idempotencyKey,
+          studentName: input.studentName,
+          email: input.email,
+          schoolLevel: input.schoolLevel,
+          yearLevel: input.yearLevel,
+          strand: input.strand,
+          course: input.course,
+          offeringId: offering.id,
+          method: input.method,
+          paymentMode: input.paymentMode,
+          senderAccountName: input.senderAccountName,
+          senderReference: input.senderReference,
+          proofImage: input.proofImage,
+        } }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") throw new Error("The secure payment submission service timed out.");
+      throw new Error("The secure payment submission service is unavailable.");
+    } finally {
+      window.clearTimeout(timeoutId);
     }
-
+    let body: { error?: string; payment?: DbRow } = {};
+    try { body = await response.json() as typeof body; } catch { body = {}; }
+    if (!response.ok) throw new Error(body.error ?? "The payment could not be submitted.");
+    const row = body.payment ?? {};
+    if (!row.id) throw new Error("The payment was not returned by the secure submission service.");
     const payer: Student = {
-      id: payerId,
-      name: input.studentName,
-      email: input.email,
+      id: String(row.payer_id),
+      name: input.studentName.trim(),
+      email: input.email.trim(),
       schoolLevel: input.schoolLevel,
       yearLevel: input.yearLevel,
       strand: input.strand,
       course: input.course,
       avatar: initials(input.studentName),
     };
-    const { error: payerError } = await client.from("hs-payers").insert({
-      id: payerId,
-      name: payer.name,
-      email: payer.email,
-      school_level: payer.schoolLevel,
-      year_level: payer.yearLevel,
-      strand: payer.strand ?? null,
-      course: payer.course ?? null,
-      avatar: payer.avatar,
-    });
-    if (payerError) throw payerError;
-
-    const reference = createReference("PAY");
-    const submittedAt = new Date().toISOString();
-    const { error: paymentError } = await client.from("hs-payments").insert({
-      id: paymentId,
-      reference,
-      payer_id: payerId,
-      offering_id: offering.id,
-      offering_name: offering.name,
-      amount: offering.amount,
-      allocations: offering.allocations,
-      payment_mode: input.paymentMode,
-      payment_state: isPayLater ? "Unpaid" : "AwaitingReview",
-      payment_deadline_at: isPayLater ? offering.payLaterDeadlineAt : null,
-      method: input.method,
-      sender_account_name: input.senderAccountName ?? null,
-      sender_reference: input.senderReference ?? null,
-      proof_path: proofPath ?? null,
-      proof_url: proofUrl ?? null,
-      submitted_at: submittedAt,
-      status: "Pending",
-      ticket_id: ticketId ?? null,
-      ticket_qr_value: ticketQrValue ?? null,
-    });
-    if (paymentError) throw paymentError;
-
-    const payment: PaymentRecord = {
-      ...input,
-      id: paymentId,
-      studentId: payerId,
-      reference,
-      offeringName: offering.name,
-      amount: offering.amount,
-      allocations: offering.allocations,
-      proofImage: proofUrl,
-      submittedAt,
-      status: "Pending",
-      paymentMode: input.paymentMode,
-      paymentState: isPayLater ? "Unpaid" : "AwaitingReview",
-      paymentDeadlineAt: isPayLater ? offering.payLaterDeadlineAt : undefined,
-      ticketId,
-      ticketQrValue,
-    };
+    const payment = mapPayment(row, new Map([[payer.id, payer]]), new Map([[offering.id, offering]]));
     setData((current) => ({ ...current, students: [payer, ...current.students], payments: [payment, ...current.payments] }));
     return payment;
   };

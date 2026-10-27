@@ -56,7 +56,7 @@ export const createId = (prefix: string) => {
 export const createReference = (prefix: string) => {
   const date = new Date();
   const datePart = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
-  const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
+  const randomPart = Math.random().toString(36).slice(2, 10).toUpperCase();
   return `${prefix}-${datePart}-${randomPart}`;
 };
 

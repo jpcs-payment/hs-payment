@@ -137,10 +137,20 @@ html[data-theme="dark"] .bg-mist {
 }
 
 html[data-theme="dark"] .bg-white,
+html[data-theme="dark"] .bg-white\/60,
+html[data-theme="dark"] .bg-white\/70,
 html[data-theme="dark"] .bg-white\/80,
 html[data-theme="dark"] .bg-white\/90,
 html[data-theme="dark"] .bg-white\/95 {
   background-color: #111f33;
+}
+
+html[data-theme="dark"] .bg-emerald-100 {
+  background-color: #155241;
+}
+
+html[data-theme="dark"] .bg-slate-200\/80 {
+  background-color: #2a3d54;
 }
 
 html[data-theme="dark"] .bg-slate-50,

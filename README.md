@@ -23,18 +23,20 @@ Create `.env` from `.env.example` and set:
 VITE_SUPABASE_URL=https://your-project-ref.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 SUPABASE_SERVICE_ROLE_KEY=server_only_service_role_key
+RATE_LIMIT_SALT=server_only_random_rate_limit_salt
 BREVO_API_KEY=xkeysib_your_key
 BREVO_FROM_EMAIL=jpcslccpayment@gmail.com
 BREVO_FROM_NAME=JPCS - LCC Payment Portal
 BREVO_REPLY_TO=jpcs.payment@gmail.com
 EMAIL_SERVER_PORT=8787
+APP_ORIGIN=https://your-deployed-domain.example
 ```
 
-The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `BREVO_REPLY_TO`, `VITE_SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` as server/project environment variables. Never commit `.env` or place server secrets in `VITE_` variables.
+The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `BREVO_REPLY_TO`, `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `RATE_LIMIT_SALT` as server/project environment variables. Set `APP_ORIGIN` to the exact deployed origin when using cross-origin API calls. Never commit `.env` or place server secrets in `VITE_` variables.
 
 ## Supabase
 
-The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, and secure approval/rejection actions. Apply them in filename order.
+The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, and hardened public payment submission with private proof storage. Apply them in filename order.
 
 After authenticating the Supabase CLI with access to the target project:
 

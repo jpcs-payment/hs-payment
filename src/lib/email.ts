@@ -1,8 +1,16 @@
 import type { PaymentRecord } from "../types";
+import { supabase } from "./supabase";
 
 interface ApprovalEmailResponse {
   emailId?: string | null;
 }
+
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  if (!supabase) return {};
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
 
 const toPayLaterEmailPayload = (payment: PaymentRecord) => ({
   id: payment.id,
@@ -49,9 +57,9 @@ export async function sendApprovalEmail(payment: PaymentRecord): Promise<Approva
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   let response: Response;
   try {
-    response = await fetch("/api/send-approval-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      response = await fetch("/api/send-approval-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
       body: JSON.stringify({ payment: toApprovalEmailPayload(payment) }),
       signal: controller.signal,
     });
@@ -77,9 +85,9 @@ export async function sendPayLaterEmail(payment: PaymentRecord): Promise<Approva
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   let response: Response;
   try {
-    response = await fetch("/api/send-pay-later-email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      response = await fetch("/api/send-pay-later-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
       body: JSON.stringify({ payment: toPayLaterEmailPayload(payment) }),
       signal: controller.signal,
     });
