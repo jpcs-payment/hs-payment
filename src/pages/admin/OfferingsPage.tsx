@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Check, Coins, Download, Layers3, Plus, Save, Settings2, Trash2, ToggleLeft, ToggleRight } from "lucide-react";
+import { useEffect, useState, type ChangeEvent } from "react";
+import { Check, Coins, Download, ImagePlus, Layers3, Plus, Save, Settings2, Trash2, ToggleLeft, ToggleRight, Upload, X } from "lucide-react";
 import { Button, Card, ConfirmDialog, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
 import { Pagination } from "../../components/Pagination";
 import { useApp } from "../../context/AppContext";
@@ -8,17 +8,20 @@ import { createId, formatCurrency, formatManilaDateTime } from "../../lib/utils"
 import { downloadCsv } from "../../lib/export";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { NewPaymentOfferingInput, PaymentAllocation, PaymentMethod, PaymentOffering, SchoolLevel } from "../../types";
+import jpcsLogo from "../../../jpcslogo/cropped_circle_image.png";
 
 const methods: PaymentMethod[] = ["Cash", "GCash", "MariBank"];
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const PAGE_SIZE = 3;
+const maxOfferingImageBytes = 5 * 1024 * 1024;
+const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type EditableAmount = number;
 type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount; draftId: string };
-type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[] };
+type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[]; imagePath?: string; imageUrl?: string; imageDataUrl?: string; removeImage: boolean };
 
 const toDraftAllocations = (allocations: PaymentAllocation[]): EditableAllocation[] => allocations.map((allocation) => ({ ...allocation, draftId: createId("allocation") }));
-const toOfferingDraft = (offering: PaymentOffering): OfferingDraft => ({ ...offering, allocations: toDraftAllocations(offering.allocations) });
+const toOfferingDraft = (offering: PaymentOffering): OfferingDraft => ({ ...offering, allocations: toDraftAllocations(offering.allocations), imageDataUrl: undefined, removeImage: false });
 
 const emptyDraft = (): OfferingDraft => ({
   slug: "",
@@ -31,6 +34,7 @@ const emptyDraft = (): OfferingDraft => ({
   allocations: [{ recipient: "JPCS", amount: 60, draftId: createId("allocation") }],
   payLaterMethods: [],
   payLaterDeadlineAt: undefined,
+  removeImage: false,
 });
 
 const toLocalDateTimeInput = (value?: string) => {
@@ -62,6 +66,36 @@ function LegacyOfferingsPage() {
     value: OfferingDraft[K],
   ) => {
     setDraft((current) => (current ? { ...current, [key]: value } : current));
+  };
+
+  const handleImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!offeringImageTypes.has(file.type)) {
+      pushToast({ tone: "error", title: "Unsupported image", message: "Choose a PNG, JPG, or WEBP image." });
+      return;
+    }
+    if (file.size > maxOfferingImageBytes) {
+      pushToast({ tone: "error", title: "Image is too large", message: "Choose an image smaller than 5 MB." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      setDraft((current) => current ? { ...current, imageDataUrl: reader.result as string, removeImage: false } : current);
+    };
+    reader.onerror = () => pushToast({ tone: "error", title: "Image could not be read", message: "Choose another image and try again." });
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageClear = () => {
+    setDraft((current) => current ? {
+      ...current,
+      imageUrl: undefined,
+      imageDataUrl: undefined,
+      removeImage: Boolean(current.imagePath || current.imageUrl),
+    } : current);
   };
 
   const toggleAvailability = (method: PaymentMethod) => {
@@ -270,8 +304,9 @@ function LegacyOfferingsPage() {
 
     setSaving(true);
     try {
+      const { id, imagePath, imageUrl, imageDataUrl, removeImage, ...draftValues } = draft;
       const input = {
-        ...draft,
+        ...draftValues,
         slug,
         name: draft.name.trim(),
         description: draft.description.trim(),
@@ -279,8 +314,9 @@ function LegacyOfferingsPage() {
         allocations: cleanAllocations,
         payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined,
       };
-      if (draft.id) await saveOffering(input as PaymentOffering);
-      else await createOffering(input);
+      const image = imageDataUrl || removeImage ? { dataUrl: imageDataUrl, remove: removeImage } : undefined;
+      if (id) await saveOffering({ ...input, id, imagePath, imageUrl } as PaymentOffering, image);
+      else await createOffering(input, image);
       setDraft(null);
       pushToast({
         tone: "success",
@@ -420,6 +456,8 @@ function LegacyOfferingsPage() {
             toggleAvailability={toggleAvailability}
             toggleSchoolLevel={toggleSchoolLevel}
             togglePayLater={togglePayLater}
+            onImageUpload={handleImageUpload}
+            onImageClear={handleImageClear}
             onCancel={() => setDraft(null)}
             onSave={save}
             saving={saving}
@@ -488,7 +526,7 @@ export function OfferingsPage() {
   );
 }
 
-function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<EditableAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
+function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addAllocation, removeAllocation, toggleAvailability, toggleSchoolLevel, togglePayLater, onImageUpload, onImageClear, onCancel, onSave, saving }: { draft: OfferingDraft; updateDraft: <K extends keyof OfferingDraft>(key: K, value: OfferingDraft[K]) => void; updateAmount: (value: string) => void; updateAllocation: (index: number, value: Partial<EditableAllocation>) => void; addAllocation: () => void; removeAllocation: (index: number) => void; toggleAvailability: (method: PaymentMethod) => void; toggleSchoolLevel: (level: SchoolLevel) => void; togglePayLater: (method: PaymentMethod) => void; onImageUpload: (event: ChangeEvent<HTMLInputElement>) => void; onImageClear: () => void; onCancel: () => void; onSave: () => void; saving: boolean }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-5 md:grid-cols-2">
@@ -497,8 +535,9 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
         <div><FieldLabel required>Amount</FieldLabel><Input type="number" min="0.01" step="0.01" value={draft.amount} onChange={(event) => updateAmount(event.target.value)} /></div>
         <div className="flex items-end"><button type="button" className={`flex h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition ${draft.active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-line bg-slate-50 text-slate-500"}`} onClick={() => updateDraft("active", !draft.active)}><span>{draft.active ? "Visible on public form" : "Hidden from public form"}</span>{draft.active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
       </div>
-      <div><FieldLabel required>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Admission payment for the JPCS Bootcamp." /></div>
-      <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
+       <div><FieldLabel required>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Admission payment for the JPCS Bootcamp." /></div>
+       <OfferingImageField imageUrl={draft.imageUrl} imageDataUrl={draft.imageDataUrl} onUpload={onImageUpload} onClear={onImageClear} />
+       <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
       <div><FieldLabel required>Available for school levels</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{schoolLevels.map((level) => <ToggleChoice key={level} label={level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College"} title={level} selected={draft.applicableSchoolLevels.includes(level)} onClick={() => toggleSchoolLevel(level)} />)}</div></div>
       <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><FieldLabel>Pay Later options</FieldLabel><p className="text-xs leading-5 text-navy-800">Students receive an attendance QR immediately. Admins can scan it at the event while the reservation remains Not Paid Yet.</p></div><span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-bold text-navy-700">Optional</span></div>
@@ -509,6 +548,11 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
        <div className="flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button><Button type="button" loading={saving} onClick={onSave}><Save className="h-4 w-4" /> Save payment type</Button></div>
     </div>
   );
+}
+
+function OfferingImageField({ imageUrl, imageDataUrl, onUpload, onClear }: { imageUrl?: string; imageDataUrl?: string; onUpload: (event: ChangeEvent<HTMLInputElement>) => void; onClear: () => void }) {
+  const preview = imageDataUrl ?? imageUrl;
+  return <div><div className="flex items-center justify-between gap-3"><FieldLabel>Card background image</FieldLabel><span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Optional</span></div>{preview ? <div className="relative mt-2 overflow-hidden rounded-2xl border border-line bg-slate-50"><img src={preview} alt="Payment type background preview" className="h-40 w-full object-cover" /><div className="absolute inset-0 bg-navy-950/10" /><div className="absolute right-3 top-3 flex flex-wrap justify-end gap-2"><label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-white px-2.5 text-[10px] font-bold text-navy-800 shadow-sm ring-1 ring-line"><Upload className="h-3.5 w-3.5" /> Replace<input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={onUpload} /></label><button type="button" className="flex h-8 items-center gap-1.5 rounded-lg bg-white px-2.5 text-[10px] font-bold text-coral shadow-sm ring-1 ring-line" onClick={onClear}><X className="h-3.5 w-3.5" /> Remove</button></div></div> : <label className="mt-2 flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50/60 px-5 py-8 text-center transition hover:border-navy-400 hover:bg-navy-50/40"><span className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-navy-700 shadow-sm"><ImagePlus className="h-5 w-5" /></span><span className="mt-3 text-xs font-bold text-navy-900">Upload a card image</span><span className="mt-1 text-[10px] text-slate-400">PNG, JPG, or WEBP · maximum 5 MB</span><input className="hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={onUpload} /></label>}<p className="mt-1.5 text-[11px] leading-5 text-slate-400">Shown as a translucent background behind the payment type details.</p></div>;
 }
 
 function ToggleChoice({ label, title, selected, disabled = false, onClick }: { label: string; title?: string; selected: boolean; disabled?: boolean; onClick: () => void }) {
@@ -526,5 +570,23 @@ function CatalogStat({ label, value, icon: Icon }: { label: string; value: numbe
 
 function PaymentTypeCard({ offering, index, onEdit }: { offering: PaymentOffering; index: number; onEdit: () => void }) {
   const gradients = ["from-navy-900 via-navy-800 to-blue-700", "from-emerald-900 via-teal-800 to-navy-800", "from-indigo-950 via-navy-800 to-slate-700"];
-  return <Card className={`group relative overflow-hidden border-0 bg-gradient-to-br ${gradients[index % gradients.length]} p-5 text-white shadow-float transition duration-300 motion-safe:hover:-translate-y-1`}><div className="pointer-events-none absolute -right-10 -top-10 h-36 w-36 rounded-full border-[18px] border-white/10" /><div className="relative flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">{offering.active ? "Active payment type" : "Hidden payment type"}</p><h3 className="mt-2 break-words text-lg font-extrabold">{offering.name}</h3></div><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10"><Coins className="h-5 w-5 text-blue-100" /></span></div><p className="relative mt-5 text-3xl font-extrabold">{formatCurrency(offering.amount)}</p><p className="relative mt-2 min-h-10 break-words text-xs leading-5 text-blue-100/70">{offering.description}</p><div className="relative mt-5 flex flex-wrap gap-1.5">{offering.applicableSchoolLevels.map((level) => <span key={level} className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-blue-50">{level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : level}</span>)}{offering.payLaterMethods.length ? <span className="rounded-full bg-amber-300/20 px-2 py-1 text-[10px] font-semibold text-amber-100">Pay Later · {offering.payLaterMethods.join("/")}</span> : null}</div><div className="relative mt-5 border-t border-white/10 pt-4"><div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-blue-100/70">{offering.allocations.map((allocation) => <span key={allocation.recipient}>{allocation.recipient}: {formatCurrency(allocation.amount)}</span>)}</div>{offering.payLaterDeadlineAt ? <p className="mt-2 text-[10px] font-semibold text-amber-100">Deadline: {formatManilaDateTime(offering.payLaterDeadlineAt)}</p> : null}</div><div className="relative mt-5 flex justify-end border-t border-white/10 pt-4"><Button variant="ghost" size="sm" className="border border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onEdit}><Settings2 className="h-3.5 w-3.5" /> Edit type</Button></div></Card>;
+  return (
+    <Card className={`group relative overflow-hidden border-0 bg-gradient-to-br ${gradients[index % gradients.length]} p-5 text-white shadow-float transition duration-300 motion-safe:hover:-translate-y-1`}>
+      {offering.imageUrl ? <><img src={offering.imageUrl} alt="" aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-25 transition duration-500 group-hover:scale-105" /><div className="pointer-events-none absolute inset-0 bg-navy-950/25" /></> : null}
+      <img src={jpcsLogo} alt="" aria-hidden="true" className="pointer-events-none absolute -right-8 -top-8 z-10 h-36 w-36 opacity-[0.1] transition duration-500 group-hover:rotate-6 group-hover:scale-110" />
+      <div className="pointer-events-none absolute -right-10 -top-10 z-10 h-36 w-36 rounded-full border-[18px] border-white/10" />
+      <div className="relative z-10 flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">{offering.active ? "Active payment type" : "Hidden payment type"}</p>
+          <h3 className="mt-2 break-words text-lg font-extrabold">{offering.name}</h3>
+        </div>
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10"><Coins className="h-5 w-5 text-blue-100" /></span>
+      </div>
+      <p className="relative z-10 mt-5 text-3xl font-extrabold">{formatCurrency(offering.amount)}</p>
+      <p className="relative z-10 mt-2 min-h-10 break-words text-xs leading-5 text-blue-100/70">{offering.description}</p>
+      <div className="relative z-10 mt-5 flex flex-wrap gap-1.5">{offering.applicableSchoolLevels.map((level) => <span key={level} className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-blue-50">{level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : level}</span>)}{offering.payLaterMethods.length ? <span className="rounded-full bg-amber-300/20 px-2 py-1 text-[10px] font-semibold text-amber-100">Pay Later · {offering.payLaterMethods.join("/")}</span> : null}</div>
+      <div className="relative z-10 mt-5 border-t border-white/10 pt-4"><div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-blue-100/70">{offering.allocations.map((allocation) => <span key={allocation.recipient}>{allocation.recipient}: {formatCurrency(allocation.amount)}</span>)}</div>{offering.payLaterDeadlineAt ? <p className="mt-2 text-[10px] font-semibold text-amber-100">Deadline: {formatManilaDateTime(offering.payLaterDeadlineAt)}</p> : null}</div>
+      <div className="relative z-10 mt-5 flex justify-end border-t border-white/10 pt-4"><Button variant="ghost" size="sm" className="border border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onEdit}><Settings2 className="h-3.5 w-3.5" /> Edit type</Button></div>
+    </Card>
+  );
 }

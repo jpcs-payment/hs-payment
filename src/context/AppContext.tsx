@@ -10,6 +10,7 @@ import type {
   NewPaymentOfferingInput,
   PaymentAllocation,
   PaymentMethodConfig,
+  PaymentOfferingImageUpdate,
   PaymentOffering,
   PaymentRecord,
   SchoolLevel,
@@ -36,8 +37,8 @@ interface AppContextValue {
   markPayLaterReceived: (paymentId: string) => Promise<PaymentRecord | undefined>;
   checkInTicket: (value: string) => Promise<TicketCheckInResult>;
   undoAttendance: (paymentId: string) => Promise<PaymentRecord | undefined>;
-  createOffering: (input: NewPaymentOfferingInput) => Promise<PaymentOffering>;
-  saveOffering: (offering: PaymentOffering) => Promise<void>;
+  createOffering: (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => Promise<PaymentOffering>;
+  saveOffering: (offering: PaymentOffering, image?: PaymentOfferingImageUpdate) => Promise<void>;
   archiveOffering: (offeringId: string) => Promise<void>;
   restoreOffering: (offeringId: string) => Promise<void>;
   archivePayer: (payerId: string) => Promise<void>;
@@ -57,6 +58,9 @@ const createUuid = () => {
 };
 
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
+const offeringImageBucket = "hs-offering-images";
+const maxOfferingImageBytes = 5 * 1024 * 1024;
+const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 const toAllocations = (value: unknown, amount: number): PaymentAllocation[] => {
   if (Array.isArray(value)) {
@@ -97,6 +101,8 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
     payLaterMethods: Array.isArray(row.pay_later_methods) ? row.pay_later_methods : [],
     payLaterDeadlineAt: row.pay_later_deadline_at ?? undefined,
+    imagePath: typeof row.image_path === "string" ? row.image_path : undefined,
+    imageUrl: typeof row.image_url === "string" ? row.image_url : undefined,
     archivedAt: row.archived_at ?? undefined,
   };
 };
@@ -168,13 +174,30 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
   };
 };
 
-const dataUrlToBlob = (value: string) => {
+const dataUrlToBlob = (value: string, label = "image") => {
   const [header, body] = value.split(",", 2);
-  if (!header || !body) throw new Error("The proof image could not be read.");
+  if (!header || !body) throw new Error(`The ${label} could not be read.`);
   const mime = header.match(/data:([^;]+);base64/i)?.[1] ?? "image/jpeg";
   const binary = window.atob(body);
   const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
   return { blob: new Blob([bytes], { type: mime }), mime };
+};
+
+const uploadOfferingImage = async (client: ReturnType<typeof requireSupabase>, offeringId: string, dataUrl: string) => {
+  const { blob, mime } = dataUrlToBlob(dataUrl, "card image");
+  if (!offeringImageTypes.has(mime) || blob.size > maxOfferingImageBytes) {
+    throw new Error("Choose a PNG, JPG, or WEBP image smaller than 5 MB.");
+  }
+  const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+  const path = `${offeringId}/${createUuid()}.${extension}`;
+  const { error } = await client.storage.from(offeringImageBucket).upload(path, blob, { contentType: mime, upsert: false });
+  if (error) throw error;
+  return { path, url: client.storage.from(offeringImageBucket).getPublicUrl(path).data.publicUrl };
+};
+
+const removeOfferingImage = async (client: ReturnType<typeof requireSupabase>, path: string) => {
+  const { error } = await client.storage.from(offeringImageBucket).remove([path]);
+  if (error) throw error;
 };
 
 export function AppProvider({ children }: { children: ReactNode }) {
@@ -320,7 +343,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let proofUrl: string | undefined;
 
     if (input.proofImage && !isPayLater) {
-      const { blob, mime } = dataUrlToBlob(input.proofImage);
+      const { blob, mime } = dataUrlToBlob(input.proofImage, "proof image");
       const extension = mime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
       proofPath = `${paymentId}/${createUuid()}.${extension}`;
       const { error: uploadError } = await client.storage.from("hs-payment-proofs").upload(proofPath, blob, { contentType: mime, upsert: false });
@@ -622,42 +645,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  const createOffering = async (input: NewPaymentOfferingInput) => {
+  const createOffering = async (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => {
     const client = requireSupabase();
-    const { data: row, error } = await client.from("hs-offerings").insert({
-      slug: input.slug.trim().toLowerCase(),
-      name: input.name.trim(),
-      description: input.description.trim(),
-      amount: input.amount,
-      active: input.active,
-      available_methods: input.availableMethods,
-      applicable_school_levels: input.applicableSchoolLevels,
-      allocations: input.allocations,
-      pay_later_methods: input.payLaterMethods,
-      pay_later_deadline_at: input.payLaterDeadlineAt ?? null,
-    }).select("*").single();
-    if (error) throw error;
-    const offering = mapOffering(row);
-    setData((current) => ({ ...current, offerings: [...current.offerings, offering] }));
-    return offering;
+    const offeringId = createUuid();
+    let uploadedImage: { path: string; url: string } | undefined;
+    try {
+      if (image?.dataUrl && !image.remove) uploadedImage = await uploadOfferingImage(client, offeringId, image.dataUrl);
+      const { data: row, error } = await client.from("hs-offerings").insert({
+        id: offeringId,
+        slug: input.slug.trim().toLowerCase(),
+        name: input.name.trim(),
+        description: input.description.trim(),
+        amount: input.amount,
+        active: input.active,
+        available_methods: input.availableMethods,
+        applicable_school_levels: input.applicableSchoolLevels,
+        allocations: input.allocations,
+        pay_later_methods: input.payLaterMethods,
+        pay_later_deadline_at: input.payLaterDeadlineAt ?? null,
+        image_path: uploadedImage?.path ?? null,
+        image_url: uploadedImage?.url ?? null,
+      }).select("*").single();
+      if (error) throw error;
+      const offering = mapOffering(row);
+      setData((current) => ({ ...current, offerings: [...current.offerings, offering] }));
+      return offering;
+    } catch (error) {
+      if (uploadedImage) {
+        try {
+          await removeOfferingImage(client, uploadedImage.path);
+        } catch {
+          // Keep the original save error; the object is no longer referenced.
+        }
+      }
+      throw error;
+    }
   };
 
-  const saveOffering = async (offering: PaymentOffering) => {
+  const saveOffering = async (offering: PaymentOffering, image?: PaymentOfferingImageUpdate) => {
     const client = requireSupabase();
-    const { error } = await client.from("hs-offerings").update({
-      slug: offering.slug.trim().toLowerCase(),
-      name: offering.name.trim(),
-      description: offering.description.trim(),
-      amount: offering.amount,
-      active: offering.active,
-      available_methods: offering.availableMethods,
-      applicable_school_levels: offering.applicableSchoolLevels,
-      allocations: offering.allocations,
-      pay_later_methods: offering.payLaterMethods,
-      pay_later_deadline_at: offering.payLaterDeadlineAt ?? null,
-    }).eq("id", offering.id);
-    if (error) throw error;
-    setData((current) => ({ ...current, offerings: current.offerings.map((item) => item.id === offering.id ? offering : item) }));
+    const previousImagePath = offering.imagePath;
+    let nextImagePath = offering.imagePath;
+    let nextImageUrl = offering.imageUrl;
+    let uploadedImage: { path: string; url: string } | undefined;
+    try {
+      if (image?.remove) {
+        nextImagePath = undefined;
+        nextImageUrl = undefined;
+      } else if (image?.dataUrl) {
+        uploadedImage = await uploadOfferingImage(client, offering.id, image.dataUrl);
+        nextImagePath = uploadedImage.path;
+        nextImageUrl = uploadedImage.url;
+      }
+      const { error } = await client.from("hs-offerings").update({
+        slug: offering.slug.trim().toLowerCase(),
+        name: offering.name.trim(),
+        description: offering.description.trim(),
+        amount: offering.amount,
+        active: offering.active,
+        available_methods: offering.availableMethods,
+        applicable_school_levels: offering.applicableSchoolLevels,
+        allocations: offering.allocations,
+        pay_later_methods: offering.payLaterMethods,
+        pay_later_deadline_at: offering.payLaterDeadlineAt ?? null,
+        image_path: nextImagePath ?? null,
+        image_url: nextImageUrl ?? null,
+      }).eq("id", offering.id);
+      if (error) throw error;
+      if (previousImagePath && previousImagePath !== nextImagePath) {
+        try {
+          await removeOfferingImage(client, previousImagePath);
+        } catch {
+          // The database no longer references the old object.
+        }
+      }
+      const updatedOffering = { ...offering, imagePath: nextImagePath, imageUrl: nextImageUrl };
+      setData((current) => ({ ...current, offerings: current.offerings.map((item) => item.id === offering.id ? updatedOffering : item) }));
+    } catch (error) {
+      if (uploadedImage) {
+        try {
+          await removeOfferingImage(client, uploadedImage.path);
+        } catch {
+          // Keep the original save error; the object is no longer referenced.
+        }
+      }
+      throw error;
+    }
   };
 
   const savePaymentMethod = async (method: PaymentMethodConfig) => {

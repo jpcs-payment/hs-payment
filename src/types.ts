@@ -50,6 +50,8 @@ export interface PaymentOffering {
   allocations: PaymentAllocation[];
   payLaterMethods: PaymentMethod[];
   payLaterDeadlineAt?: string;
+  imagePath?: string;
+  imageUrl?: string;
   archivedAt?: string;
 }
 
@@ -149,6 +151,11 @@ export interface NewPaymentOfferingInput {
   allocations: PaymentAllocation[];
   payLaterMethods: PaymentMethod[];
   payLaterDeadlineAt?: string;
+}
+
+export interface PaymentOfferingImageUpdate {
+  dataUrl?: string;
+  remove?: boolean;
 }
 
 export type TicketCheckInResult =
