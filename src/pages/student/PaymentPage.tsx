@@ -45,6 +45,7 @@ const stepLabels: Record<PaymentStep, string> = {
 const yearsFor = (level: SchoolLevel) => level === "Senior High School" ? seniorYears : level === "College" ? collegeYears : juniorYears;
 const shortSchoolLevel = (level: SchoolLevel) => level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College";
 const createSubmissionKey = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : undefined;
+const emailAlreadyUsedMessage = "email has been used";
 
 export function PaymentPage() {
   const { data, submitPayment, sendPayLaterEmail, dataLoading, dataError, retryData } = useApp();
@@ -230,7 +231,13 @@ export function PaymentPage() {
         pushToast({ tone: "success", title: "Payment submitted", message: `Reference ${payment.reference} is ready for admin review.` });
       }
     } catch (error) {
-      pushToast({ tone: "error", title: "Submission failed", message: error instanceof Error ? error.message : "The payment could not be saved. Check the database migration and try again." });
+      const message = error instanceof Error ? error.message : "The payment could not be saved. Check the database migration and try again.";
+      const emailAlreadyUsed = message.toLowerCase() === emailAlreadyUsedMessage;
+      if (emailAlreadyUsed) {
+        setErrors((current) => ({ ...current, email: emailAlreadyUsedMessage }));
+        moveTo("details");
+      }
+      pushToast({ tone: "error", title: emailAlreadyUsed ? "Email already used" : "Submission failed", message });
     } finally {
       setSubmitting(false);
     }

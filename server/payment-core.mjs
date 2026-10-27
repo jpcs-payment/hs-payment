@@ -6,6 +6,8 @@ const maxProofBytes = 3 * 1024 * 1024;
 const submissionWindowMs = 10 * 60 * 1000;
 const maxEmailSubmissions = 5;
 const maxIpSubmissions = 20;
+const emailAlreadyUsedMessage = "email has been used";
+const duplicateEmailConstraint = "hs_payers_email_once_idx";
 
 const config = () => ({
   supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
@@ -63,6 +65,13 @@ const normalizeInput = (input) => {
 };
 
 const hashValue = (value, secret) => createHash("sha256").update(`${secret}:${value}`).digest("hex");
+
+const isDuplicateEmailError = (error) => {
+  const message = String(error?.message ?? "").toLowerCase();
+  const details = String(error?.details ?? "").toLowerCase();
+  return (error?.code === "P0001" && (message === emailAlreadyUsedMessage || details.includes("email_already_used")))
+    || (error?.code === "23505" && (message.includes(duplicateEmailConstraint) || details.includes(duplicateEmailConstraint)));
+};
 
 const checkSubmissionRateLimit = async (client, email, requestKey, secret) => {
   const ipHash = requestKey ? hashValue(requestKey, secret) : undefined;
@@ -131,10 +140,11 @@ export async function submitPayment(input, { requestKey } = {}) {
     if (proofPath) {
       try { await client.storage.from(paymentProofBucket).remove([proofPath]); } catch { /* Keep the original submission error. */ }
     }
-    if (error?.code === "23505") {
+    if (error?.code === "23505" || isDuplicateEmailError(error)) {
       const existingResponse = await client.from("hs-payments").select("*").eq("id", paymentId).maybeSingle();
       if (!existingResponse.error && existingResponse.data) return existingResponse.data;
     }
+    if (isDuplicateEmailError(error)) throw new PublicSubmissionError(emailAlreadyUsedMessage, 409);
     if (error instanceof PublicSubmissionError) throw error;
     throw error;
   }
