@@ -5,7 +5,7 @@ export const BRANDING = {
   systemName: "JPCS - LCC Payment Portal",
   credits: [
     "Web Developer • John Benedict Javier",
-    "Web QA Engineer • Aerol Justine • Ms. Joyce",
+    "QA Tester • Aerol Justine • Ms. Joyce",
   ],
   qrPrefix: "JPCS-LCC-TICKET:",
 } as const;
