@@ -4,7 +4,7 @@ export const BRANDING = {
   fullOrganization: "Junior Philippines Computer Studies",
   systemName: "JPCS - LCC Payment Portal",
   credits: [
-    "Web Software Engineer • John Benedict Javier",
+    "Web Developer • John Benedict Javier",
     "Web QA Engineer • Aerol Justine • Ms. Joyce",
   ],
   qrPrefix: "JPCS-LCC-TICKET:",
