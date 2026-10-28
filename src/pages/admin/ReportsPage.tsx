@@ -7,9 +7,10 @@ import { downloadCsv, downloadPdf, downloadPaymentCsv, downloadPaymentPdf } from
 import { summarizeAllocations } from "../../lib/reporting";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
-import type { PaymentStatus } from "../../types";
+import type { PaymentMethod, PaymentStatus } from "../../types";
 
 const statusFilters: Array<"All statuses" | PaymentStatus> = ["All statuses", "Pending", "Approved", "Rejected"];
+const methodFilters: Array<"All methods" | PaymentMethod> = ["All methods", "Cash", "GCash", "MariBank"];
 const PAGE_SIZE = 10;
 
 export function ReportsPage() {
@@ -17,6 +18,7 @@ export function ReportsPage() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<(typeof statusFilters)[number]>("All statuses");
   const [type, setType] = useState("All types");
+  const [method, setMethod] = useState<(typeof methodFilters)[number]>("All methods");
   const [allocationPage, setAllocationPage] = useState(1);
   const [ledgerPage, setLedgerPage] = useState(1);
 
@@ -24,10 +26,12 @@ export function ReportsPage() {
   const payments = useMemo(() => data.payments
     .filter((payment) => status === "All statuses" || payment.status === status)
     .filter((payment) => type === "All types" || payment.offeringName === type)
+    .filter((payment) => method === "All methods" || payment.method === method)
     .filter((payment) => `${payment.reference} ${payment.studentName} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`.toLowerCase().includes(query.toLowerCase()))
-    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [data.payments, query, status, type]);
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [data.payments, method, query, status, type]);
   const attended = payments.filter((payment) => payment.attendedAt);
   const paymentPendingAfterAttendance = attended.filter((payment) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid");
+  const paidCount = payments.filter((payment) => payment.paymentState === "Paid").length;
   const collected = payments.filter((payment) => payment.paymentState === "Paid").reduce((sum, payment) => sum + payment.amount, 0);
   const outstanding = payments.filter((payment) => payment.paymentState === "Unpaid").reduce((sum, payment) => sum + payment.amount, 0);
   const allocationSummaries = useMemo(() => summarizeAllocations(payments), [payments]);
@@ -43,7 +47,7 @@ export function ReportsPage() {
   useEffect(() => {
     setAllocationPage(1);
     setLedgerPage(1);
-  }, [query, status, type]);
+  }, [method, query, status, type]);
 
   useEffect(() => {
     setAllocationPage((current) => Math.min(current, allocationPageCount));
@@ -65,12 +69,13 @@ export function ReportsPage() {
         </div>
       </div>
 
-      <section className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-4">
-        <div className="order-1"><ReportStat label="Payment records" value={payments.length} detail="Current filters" icon={BarChart3} /></div>
-        <div className="order-2"><ReportStat label="Collected" value={formatCurrency(collected)} detail="Marked paid" icon={CheckCircle2} /></div>
-        <div className="order-4 xl:order-3"><ReportStat label="Outstanding" value={formatCurrency(outstanding)} detail="Still unpaid" icon={Clock3} /></div>
-        <div className="order-3 xl:order-4"><ReportStat label="Attended but unpaid" value={paymentPendingAfterAttendance.length} detail="Needs follow-up" icon={UsersRound} /></div>
-      </section>
+       <section className="grid grid-cols-2 gap-2.5 sm:gap-4 xl:grid-cols-5">
+         <div><ReportStat label="Payment records" value={payments.length} detail="Current filters" icon={BarChart3} /></div>
+         <div><ReportStat label="Paid payments" value={paidCount} detail="Marked paid" icon={CheckCircle2} /></div>
+         <div><ReportStat label="Collected" value={formatCurrency(collected)} detail="Paid amount" icon={CheckCircle2} /></div>
+         <div><ReportStat label="Outstanding" value={formatCurrency(outstanding)} detail="Still unpaid" icon={Clock3} /></div>
+         <div><ReportStat label="Attended but unpaid" value={paymentPendingAfterAttendance.length} detail="Needs follow-up" icon={UsersRound} /></div>
+       </section>
 
        <Card className="overflow-hidden">
          <div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-5 sm:flex-row sm:items-center sm:px-6">
@@ -97,13 +102,14 @@ export function ReportsPage() {
       <Card className="p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
            <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400"><Filter className="h-3.5 w-3.5" /> Filters</div>
-           <div className="grid gap-3 lg:min-w-[720px] lg:grid-cols-[minmax(0,1fr)_180px_180px]">
-             <div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search records" /></div>
-             <div className="grid min-w-0 grid-cols-2 gap-3 lg:contents">
-               <Select className="min-w-0" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statusFilters.map((item) => <option key={item}>{item}</option>)}</Select>
-               <Select className="min-w-0" value={type} onChange={(event) => setType(event.target.value)}>{types.map((item) => <option key={item}>{item}</option>)}</Select>
-             </div>
-           </div>
+            <div className="grid gap-3 lg:min-w-[900px] lg:grid-cols-[minmax(0,1fr)_180px_180px_180px]">
+              <div className="relative"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search records" /></div>
+              <div className="grid min-w-0 grid-cols-2 gap-3 sm:grid-cols-3 lg:contents">
+                <Select className="min-w-0" value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>{statusFilters.map((item) => <option key={item}>{item}</option>)}</Select>
+                <Select className="min-w-0" value={type} onChange={(event) => setType(event.target.value)}>{types.map((item) => <option key={item}>{item}</option>)}</Select>
+                <Select className="min-w-0" value={method} onChange={(event) => setMethod(event.target.value as typeof method)}>{methodFilters.map((item) => <option key={item}>{item}</option>)}</Select>
+              </div>
+            </div>
         </div>
       </Card>
 
