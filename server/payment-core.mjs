@@ -39,7 +39,9 @@ const parseProofImage = (value) => {
 const normalizeInput = (input) => {
   if (!input || typeof input !== "object") throw new PublicSubmissionError("Payment data is required.");
   const payment = input;
-  const studentName = typeof payment.studentName === "string" ? payment.studentName.trim() : "";
+  const rawAttendeeNames = Array.isArray(payment.attendeeNames) ? payment.attendeeNames : [payment.studentName];
+  const attendeeNames = rawAttendeeNames.map((name) => typeof name === "string" ? name.trim() : "");
+  const studentName = attendeeNames[0] ?? "";
   const email = typeof payment.email === "string" ? payment.email.trim().toLowerCase() : "";
   const schoolLevel = typeof payment.schoolLevel === "string" ? payment.schoolLevel : "";
   const yearLevel = typeof payment.yearLevel === "string" ? payment.yearLevel.trim() : "";
@@ -60,8 +62,10 @@ const normalizeInput = (input) => {
   const proofImage = paymentMode === "PayNow" && method !== "Cash" ? parseProofImage(payment.proofImage) : null;
   if (paymentMode === "PayNow" && method !== "Cash" && (!senderAccountName || !senderReference || !proofImage)) throw new PublicSubmissionError("Sender account, payment reference, and proof are required for cashless payments.");
   if (!payment.offeringId || typeof payment.offeringId !== "string") throw new PublicSubmissionError("The selected payment type is invalid.");
+  if (!attendeeNames.length || attendeeNames.some((name) => !name || name.length > 160)) throw new PublicSubmissionError("Each attendee must have a valid name.");
+  if (new Set(attendeeNames.map((name) => name.toLowerCase())).size !== attendeeNames.length) throw new PublicSubmissionError("Each attendee name must be unique.");
   const idempotencyKey = typeof payment.idempotencyKey === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payment.idempotencyKey) ? payment.idempotencyKey : undefined;
-  return { idempotencyKey, studentName, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, senderAccountName, senderReference, proofImage };
+  return { idempotencyKey, studentName, attendeeNames, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, senderAccountName, senderReference, proofImage };
 };
 
 const hashValue = (value, secret) => createHash("sha256").update(`${secret}:${value}`).digest("hex");
@@ -80,6 +84,16 @@ const checkSubmissionRateLimit = async (client, email, requestKey, secret) => {
   if (data !== true) throw new PublicSubmissionError("Too many payment submissions. Try again later.", 429);
 };
 
+const withAttendees = async (client, payment) => {
+  const { data, error } = await client
+    .from("hs-payment-attendees")
+    .select("*")
+    .eq("payment_id", payment.id)
+    .order("position", { ascending: true });
+  if (error) throw error;
+  return { ...payment, attendees: data ?? [] };
+};
+
 export async function submitPayment(input, { requestKey } = {}) {
   const { supabaseUrl, serviceRoleKey } = config();
   if (!supabaseUrl || !serviceRoleKey) throw new PublicSubmissionError("The secure payment submission service is not configured.", 503);
@@ -92,8 +106,10 @@ export async function submitPayment(input, { requestKey } = {}) {
     const payerResponse = await client.from("hs-payers").select("email,name,school_level,year_level,strand,course").eq("id", existingResponse.data.payer_id).maybeSingle();
     if (payerResponse.error) throw payerResponse.error;
     const existingPayer = payerResponse.data;
+    const existingPayment = await withAttendees(client, existingResponse.data);
+    const existingNames = Array.isArray(existingPayment.attendees) ? existingPayment.attendees.map((attendee) => String(attendee.name).trim()) : [existingPayer?.name];
     const sameSubmission = existingPayer?.email === payment.email
-      && existingPayer.name === payment.studentName
+      && JSON.stringify(existingNames) === JSON.stringify(payment.attendeeNames)
       && existingPayer.school_level === payment.schoolLevel
       && existingPayer.year_level === payment.yearLevel
       && (existingPayer.strand ?? undefined) === payment.strand
@@ -104,9 +120,16 @@ export async function submitPayment(input, { requestKey } = {}) {
       && (existingResponse.data.sender_account_name ?? undefined) === (payment.senderAccountName ?? undefined)
       && (existingResponse.data.sender_reference ?? undefined) === (payment.senderReference ?? undefined);
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
-    return existingResponse.data;
+    return existingPayment;
   }
   await checkSubmissionRateLimit(client, payment.email, requestKey, serviceRoleKey);
+
+  const offeringResponse = await client.from("hs-offerings").select("allow_multiple_names,max_names,active,archived_at").eq("id", payment.offeringId).maybeSingle();
+  if (offeringResponse.error) throw offeringResponse.error;
+  const offering = offeringResponse.data;
+  if (!offering?.active || offering.archived_at) throw new PublicSubmissionError("The selected payment type is not available.");
+  const maxNames = offering.allow_multiple_names ? Number(offering.max_names) || 1 : 1;
+  if (payment.attendeeNames.length > maxNames) throw new PublicSubmissionError(`The selected payment type allows at most ${maxNames} name${maxNames === 1 ? "" : "s"}.`);
 
   const payerId = randomUUID();
   let proofPath;
@@ -131,18 +154,19 @@ export async function submitPayment(input, { requestKey } = {}) {
       p_sender_account_name: payment.senderAccountName ?? null,
       p_sender_reference: payment.senderReference ?? null,
       p_proof_path: proofPath ?? null,
+      p_attendee_names: payment.attendeeNames,
     });
     if (error) throw error;
     const row = (Array.isArray(data) ? data[0] : data) ?? null;
     if (!row?.id) throw new Error("The payment was not returned by the database.");
-    return row;
+    return withAttendees(client, row);
   } catch (error) {
     if (proofPath) {
       try { await client.storage.from(paymentProofBucket).remove([proofPath]); } catch { /* Keep the original submission error. */ }
     }
     if (error?.code === "23505" || isDuplicateEmailError(error)) {
       const existingResponse = await client.from("hs-payments").select("*").eq("id", paymentId).maybeSingle();
-      if (!existingResponse.error && existingResponse.data) return existingResponse.data;
+      if (!existingResponse.error && existingResponse.data) return withAttendees(client, existingResponse.data);
     }
     if (isDuplicateEmailError(error)) throw new PublicSubmissionError(emailAlreadyUsedMessage, 409);
     if (error instanceof PublicSubmissionError) throw error;

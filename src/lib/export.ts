@@ -3,6 +3,7 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { BRANDING } from "./branding";
 import { formatCurrency, formatDateTime } from "./utils";
+import { getPaymentAttendees } from "./payment";
 
 type CsvValue = string | number | boolean | null | undefined;
 type PdfValue = string | number | boolean | null | undefined;
@@ -26,6 +27,8 @@ export const downloadCsv = (filename: string, headers: string[], rows: CsvValue[
 export const paymentExportHeaders = [
   "Reference",
   "Payer",
+  "Attendee count",
+  "Attendee names",
   "Email",
   "School level",
   "Year level",
@@ -43,12 +46,15 @@ export const paymentExportHeaders = [
   "Paid at",
   "Receipt number",
   "Ticket ID",
+  "Ticket IDs",
   "Attended at",
 ];
 
 export const paymentToExportRow = (payment: PaymentRecord): CsvValue[] => [
   payment.reference,
   payment.studentName,
+  getPaymentAttendees(payment).length,
+  getPaymentAttendees(payment).map((attendee) => attendee.name).join(" | "),
   payment.email,
   payment.schoolLevel,
   payment.yearLevel,
@@ -66,6 +72,7 @@ export const paymentToExportRow = (payment: PaymentRecord): CsvValue[] => [
   payment.paidAt,
   payment.receiptNumber,
   payment.ticketId,
+  getPaymentAttendees(payment).map((attendee) => `${attendee.name}: ${attendee.ticketId ?? "-"}`).join(" | "),
   payment.attendedAt,
 ];
 
@@ -150,19 +157,19 @@ export const downloadPdf = ({ filename, title, subtitle, headers, rows, orientat
 };
 
 export const downloadPaymentPdf = (payments: PaymentRecord[], filename = `jpcs-payment-report-${new Date().toISOString().slice(0, 10)}.pdf`) => {
-  const headers = ["Reference", "Payer", "Email", "Type", "Amount", "Method", "Mode", "Status", "Payment state", "Submitted", "Ticket"];
+  const headers = ["Reference", "Email", "Attendees", "Total", "Type", "Method", "Mode", "Status", "Payment state", "Submitted", "Tickets"];
   const rows = payments.map((payment) => [
     payment.reference,
-    payment.studentName,
     payment.email,
-    payment.offeringName,
+    getPaymentAttendees(payment).map((attendee) => attendee.name).join(" | "),
     formatCurrency(payment.amount),
+    payment.offeringName,
     payment.method,
     payment.paymentMode,
     payment.status,
     payment.paymentState,
     formatDateTime(payment.submittedAt),
-    payment.ticketId ?? "-",
+    getPaymentAttendees(payment).map((attendee) => attendee.ticketId ?? "-").join(" | "),
   ]);
   downloadPdf({
     filename,

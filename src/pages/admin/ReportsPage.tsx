@@ -6,6 +6,7 @@ import { useApp } from "../../context/AppContext";
 import { downloadCsv, downloadPdf, downloadPaymentCsv, downloadPaymentPdf } from "../../lib/export";
 import { summarizeAllocations } from "../../lib/reporting";
 import { getPageCount, getPageItems } from "../../lib/pagination";
+import { getPaymentAttendees } from "../../lib/payment";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import type { PaymentMethod, PaymentStatus } from "../../types";
 
@@ -27,10 +28,10 @@ export function ReportsPage() {
     .filter((payment) => status === "All statuses" || payment.status === status)
     .filter((payment) => type === "All types" || payment.offeringName === type)
     .filter((payment) => method === "All methods" || payment.method === method)
-    .filter((payment) => `${payment.reference} ${payment.studentName} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`.toLowerCase().includes(query.toLowerCase()))
+    .filter((payment) => `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => `${attendee.name} ${attendee.ticketId ?? ""}`).join(" ")} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [data.payments, method, query, status, type]);
-  const attended = payments.filter((payment) => payment.attendedAt);
-  const paymentPendingAfterAttendance = attended.filter((payment) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid");
+  const attended = payments.flatMap((payment) => getPaymentAttendees(payment).filter((attendee) => attendee.attendedAt).map((attendee) => ({ payment, attendee })));
+  const paymentPendingAfterAttendance = attended.filter(({ payment }) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid");
   const paidCount = payments.filter((payment) => payment.paymentState === "Paid").length;
   const collected = payments.filter((payment) => payment.paymentState === "Paid").reduce((sum, payment) => sum + payment.amount, 0);
   const outstanding = payments.filter((payment) => payment.paymentState === "Unpaid").reduce((sum, payment) => sum + payment.amount, 0);
@@ -74,7 +75,7 @@ export function ReportsPage() {
          <div><ReportStat label="Paid payments" value={paidCount} detail="Marked paid" icon={CheckCircle2} /></div>
          <div><ReportStat label="Collected" value={formatCurrency(collected)} detail="Paid amount" icon={CheckCircle2} /></div>
          <div><ReportStat label="Outstanding" value={formatCurrency(outstanding)} detail="Still unpaid" icon={Clock3} /></div>
-         <div><ReportStat label="Attended but unpaid" value={paymentPendingAfterAttendance.length} detail="Needs follow-up" icon={UsersRound} /></div>
+          <div><ReportStat label="Attended but unpaid" value={paymentPendingAfterAttendance.length} detail="Attendee tickets" icon={UsersRound} /></div>
        </section>
 
        <Card className="overflow-hidden">
@@ -118,12 +119,12 @@ export function ReportsPage() {
          {payments.length ? <>
            <div className="hidden overflow-x-auto md:block">
              <table className="w-full min-w-[1050px] text-left">
-               <thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-5 py-3">Payer</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Amount</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Attendance</th><th className="px-5 py-3">Submitted</th></tr></thead>
-               <tbody className="divide-y divide-line">{visiblePayments.map((payment) => <tr key={payment.id} className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4"><p className="font-semibold text-navy-800">{payment.offeringName}</p><p className="mt-1 text-slate-400">{payment.paymentMode}</p></td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(payment.amount)}</td><td className="px-5 py-4"><p className="font-semibold text-slate-700">{payment.paymentState}</p><p className="mt-1 text-slate-400">{payment.status}</p></td><td className="px-5 py-4"><p className={payment.attendedAt ? "font-bold text-emerald-700" : "font-semibold text-slate-500"}>{payment.attendedAt ? "Checked in" : "Not checked in"}</p>{payment.attendedAt && payment.paymentState === "Unpaid" ? <p className="mt-1 font-bold text-coral">Payment pending</p> : null}</td><td className="px-5 py-4 font-semibold text-slate-600">{formatDateTime(payment.submittedAt)}</td></tr>)}</tbody>
+                <thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-5 py-3">Attendees</th><th className="px-5 py-3">Type</th><th className="px-5 py-3">Total</th><th className="px-5 py-3">Payment</th><th className="px-5 py-3">Attendance</th><th className="px-5 py-3">Submitted</th></tr></thead>
+                <tbody className="divide-y divide-line">{visiblePayments.map((payment) => { const attendees = getPaymentAttendees(payment); const checkedIn = attendees.filter((attendee) => attendee.attendedAt).length; return <tr key={payment.id} className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{attendees.map((attendee) => attendee.name).join(", ")}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4"><p className="font-semibold text-navy-800">{payment.offeringName}</p><p className="mt-1 text-slate-400">{payment.paymentMode}</p></td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(payment.amount)}</td><td className="px-5 py-4"><p className="font-semibold text-slate-700">{payment.paymentState}</p><p className="mt-1 text-slate-400">{payment.status}</p></td><td className="px-5 py-4"><p className={checkedIn ? "font-bold text-emerald-700" : "font-semibold text-slate-500"}>{checkedIn}/{attendees.length} checked in</p>{checkedIn && payment.paymentState === "Unpaid" ? <p className="mt-1 font-bold text-coral">Payment pending</p> : null}</td><td className="px-5 py-4 font-semibold text-slate-600">{formatDateTime(payment.submittedAt)}</td></tr>; })}</tbody>
              </table>
            </div>
            <div className="space-y-3 p-4 md:hidden">
-             {visiblePayments.map((payment) => <article key={payment.id} className="rounded-2xl border border-line p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 break-words text-xs text-slate-400">{payment.email}</p></div><span className="shrink-0 rounded-full bg-navy-50 px-2.5 py-1 text-[10px] font-bold text-navy-700">{payment.paymentMode}</span></div><dl className="mt-4 grid grid-cols-2 gap-3"><ReportDetail label="Type" value={payment.offeringName} /><ReportDetail label="Amount" value={formatCurrency(payment.amount)} /><ReportDetail label="Payment" value={`${payment.paymentState} · ${payment.status}`} /><ReportDetail label="Attendance" value={payment.attendedAt ? "Checked in" : "Not checked in"} /><ReportDetail label="Submitted" value={formatDateTime(payment.submittedAt)} /></dl>{payment.attendedAt && payment.paymentState === "Unpaid" ? <p className="mt-3 text-[10px] font-bold text-coral">Payment pending</p> : null}</article>)}
+              {visiblePayments.map((payment) => { const attendees = getPaymentAttendees(payment); const checkedIn = attendees.filter((attendee) => attendee.attendedAt).length; return <article key={payment.id} className="rounded-2xl border border-line p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{attendees.map((attendee) => attendee.name).join(", ")}</p><p className="mt-1 break-words text-xs text-slate-400">{payment.email}</p></div><span className="shrink-0 rounded-full bg-navy-50 px-2.5 py-1 text-[10px] font-bold text-navy-700">{payment.paymentMode}</span></div><dl className="mt-4 grid grid-cols-2 gap-3"><ReportDetail label="Type" value={payment.offeringName} /><ReportDetail label="Total" value={formatCurrency(payment.amount)} /><ReportDetail label="Payment" value={`${payment.paymentState} · ${payment.status}`} /><ReportDetail label="Attendance" value={`${checkedIn}/${attendees.length} checked in`} /><ReportDetail label="Submitted" value={formatDateTime(payment.submittedAt)} /></dl>{checkedIn && payment.paymentState === "Unpaid" ? <p className="mt-3 text-[10px] font-bold text-coral">Payment pending</p> : null}</article>; })}
            </div>
          </> : <div className="p-10 text-center text-sm text-slate-500">No records match the current filters.</div>}
          <Pagination page={ledgerPage} pageCount={ledgerPageCount} totalItems={payments.length} pageSize={PAGE_SIZE} onPageChange={setLedgerPage} />

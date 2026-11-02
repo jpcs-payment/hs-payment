@@ -8,6 +8,7 @@ import { AdminPageSkeleton, Avatar, Button, Input } from "./ui";
 import { OrganizationLogo } from "./OrganizationLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import { BRANDING } from "../lib/branding";
+import { getPaymentAttendees } from "../lib/payment";
 
 interface NavItem {
   label: string;
@@ -66,9 +67,9 @@ export function AppShell() {
       .slice(0, 4)
       .map((student) => ({ label: student.name, detail: `${student.email} · Payer`, to: "/admin/payers" }));
     const payments = data.payments
-      .filter((payment) => `${payment.reference} ${payment.ticketId ?? ""} ${payment.studentName} ${payment.email} ${payment.offeringName}`.toLowerCase().includes(query))
-      .slice(0, 4)
-      .map((payment) => ({ label: payment.reference, detail: `${payment.studentName} · ${formatCurrency(payment.amount)}`, to: "/admin/payments" }));
+       .filter((payment) => `${payment.reference} ${payment.ticketId ?? ""} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => `${attendee.name} ${attendee.ticketId ?? ""}`).join(" ")} ${payment.email} ${payment.offeringName}`.toLowerCase().includes(query))
+       .slice(0, 4)
+       .map((payment) => ({ label: payment.reference, detail: `${getPaymentAttendees(payment).map((attendee) => attendee.name).join(", ")} · ${formatCurrency(payment.amount)}`, to: "/admin/payments" }));
     const offerings = data.offerings
       .filter((offering) => !offering.archivedAt && `${offering.name} ${offering.slug} ${offering.description}`.toLowerCase().includes(query))
       .slice(0, 4)

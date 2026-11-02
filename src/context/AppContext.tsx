@@ -3,9 +3,11 @@ import { cloneInitialData } from "../data/seed";
 import { createTicketQrValue } from "../lib/branding";
 import { sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
 import { initials, createReference } from "../lib/utils";
+import { getPaymentAttendees } from "../lib/payment";
 import { requireSupabase, supabase } from "../lib/supabase";
 import type {
   AppData,
+  PaymentAttendee,
   NewPaymentInput,
   NewPaymentOfferingInput,
   PaymentAllocation,
@@ -36,7 +38,7 @@ interface AppContextValue {
   sendPayLaterEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
   markPayLaterReceived: (paymentId: string) => Promise<PaymentRecord | undefined>;
   checkInTicket: (value: string) => Promise<TicketCheckInResult>;
-  undoAttendance: (paymentId: string) => Promise<PaymentRecord | undefined>;
+  undoAttendance: (paymentId: string, attendeeId?: string) => Promise<PaymentRecord | undefined>;
   createOffering: (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => Promise<PaymentOffering>;
   saveOffering: (offering: PaymentOffering, image?: PaymentOfferingImageUpdate) => Promise<void>;
   archiveOffering: (offeringId: string) => Promise<void>;
@@ -98,6 +100,8 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     description: String(row.description ?? ""),
     amount,
     active: Boolean(row.active),
+    allowMultipleNames: Boolean(row.allow_multiple_names),
+    maxNames: Math.max(1, Number(row.max_names) || 1),
     availableMethods: Array.isArray(row.available_methods) ? row.available_methods : ["Cash", "GCash", "MariBank"],
     applicableSchoolLevels: configuredLevels.length ? configuredLevels : schoolLevels,
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
@@ -130,15 +134,29 @@ const mapPayer = (row: DbRow): Student => ({
   archivedAt: row.archived_at ?? undefined,
 });
 
-const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<string, PaymentOffering>): PaymentRecord => {
+const mapAttendee = (row: DbRow): PaymentAttendee => ({
+  id: String(row.id),
+  name: String(row.name ?? ""),
+  position: Math.max(1, Number(row.position) || 1),
+  ticketId: row.ticket_id ?? undefined,
+  ticketQrValue: row.ticket_qr_value ?? undefined,
+  attendedAt: row.attended_at ?? undefined,
+});
+
+const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<string, PaymentOffering>, attendeeRows = new Map<string, PaymentAttendee[]>(), inlineAttendees?: PaymentAttendee[]): PaymentRecord => {
   const payer = payers.get(String(row.payer_id));
   const offering = offerings.get(String(row.offering_id));
   const amount = Number(row.amount) || offering?.amount || 0;
+  const attendees = inlineAttendees?.length
+    ? inlineAttendees
+    : attendeeRows.get(String(row.id)) ?? [];
+  const firstAttendee = attendees[0];
+  const attendeeCount = Math.max(1, Number(row.attendee_count) || attendees.length || 1);
   return {
     id: String(row.id),
     reference: String(row.reference),
     studentId: String(row.payer_id),
-    studentName: payer?.name ?? String(row.student_name ?? ""),
+    studentName: firstAttendee?.name ?? payer?.name ?? String(row.student_name ?? ""),
     email: payer?.email ?? String(row.email ?? ""),
     schoolLevel: payer?.schoolLevel ?? row.school_level,
     yearLevel: payer?.yearLevel ?? String(row.year_level ?? ""),
@@ -147,6 +165,8 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     offeringId: String(row.offering_id),
     offeringName: String(row.offering_name ?? offering?.name ?? "Film Showing"),
     amount,
+    attendeeCount,
+    attendees,
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
     method: row.method,
     paymentMode: row.payment_mode === "PayLater" ? "PayLater" : "PayNow",
@@ -166,14 +186,20 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     paidByName: row.paid_by_name ?? undefined,
     paidByEmail: row.paid_by_email ?? undefined,
     receiptNumber: row.receipt_number ?? undefined,
-    ticketId: row.ticket_id ?? undefined,
-    ticketQrValue: row.ticket_qr_value ?? undefined,
+    ticketId: row.ticket_id ?? firstAttendee?.ticketId ?? undefined,
+    ticketQrValue: row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? undefined,
     emailDeliveryStatus: row.email_delivery_status ?? undefined,
     emailSentAt: row.email_sent_at ?? undefined,
     emailId: row.email_id ?? undefined,
     emailDeliveryError: row.email_delivery_error ?? undefined,
-    attendedAt: row.attended_at ?? undefined,
+    attendedAt: row.attended_at ?? firstAttendee?.attendedAt ?? undefined,
   };
+};
+
+const fetchPaymentAttendees = async (client: ReturnType<typeof requireSupabase>, paymentId: string) => {
+  const { data, error } = await client.from("hs-payment-attendees").select("*").eq("payment_id", paymentId).order("position", { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map(mapAttendee);
 };
 
 const dataUrlToBlob = (value: string, label = "image") => {
@@ -234,15 +260,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const [payersResponse, paymentsResponse] = await Promise.all([
+      const [payersResponse, paymentsResponse, attendeesResponse] = await Promise.all([
         client.from("hs-payers").select("*").order("created_at", { ascending: false }),
         client.from("hs-payments").select("*").order("submitted_at", { ascending: false }),
+        client.from("hs-payment-attendees").select("*").order("position", { ascending: true }),
       ]);
       if (payersResponse.error) throw payersResponse.error;
       if (paymentsResponse.error) throw paymentsResponse.error;
+      if (attendeesResponse.error) throw attendeesResponse.error;
       const students = (payersResponse.data ?? []).map(mapPayer);
       const payers = new Map(students.map((payer) => [payer.id, payer]));
       const offeringMap = new Map(offerings.map((offering) => [offering.id, offering]));
+      const attendeeMap = new Map<string, PaymentAttendee[]>();
+      (attendeesResponse.data ?? []).forEach((row) => {
+        const paymentId = String(row.payment_id);
+        const list = attendeeMap.get(paymentId) ?? [];
+        list.push(mapAttendee(row));
+        attendeeMap.set(paymentId, list);
+      });
       const paymentRows = paymentsResponse.data ?? [];
       const proofPaths = [...new Set(paymentRows.map((payment) => typeof payment.proof_path === "string" ? payment.proof_path : "").filter(Boolean))];
       const proofUrls = new Map<string, string>();
@@ -253,7 +288,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (item.signedUrl) proofUrls.set(proofPaths[index], item.signedUrl);
         });
       }
-      const payments = paymentRows.map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap));
+      const payments = paymentRows.map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap, attendeeMap));
       setData({ students, offerings, paymentMethods, payments, developers: [] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
@@ -344,6 +379,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!offering.payLaterMethods.includes(input.method)) throw new Error("Pay Later is not enabled for this payment method.");
       if (!offering.payLaterDeadlineAt || new Date(offering.payLaterDeadlineAt).getTime() <= Date.now()) throw new Error("The Pay Later deadline has passed or is not configured.");
     }
+    const attendeeNames = (input.attendeeNames?.length ? input.attendeeNames : [input.studentName])
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const maxNames = offering.allowMultipleNames ? offering.maxNames : 1;
+    if (!attendeeNames.length || attendeeNames.length > maxNames) {
+      throw new Error(`Add between 1 and ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
+    }
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), 30000);
@@ -352,10 +394,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       response = await fetch("/api/submit-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payment: {
-          idempotencyKey: input.idempotencyKey,
-          studentName: input.studentName,
-          email: input.email,
+           body: JSON.stringify({ payment: {
+           idempotencyKey: input.idempotencyKey,
+           studentName: attendeeNames[0],
+           attendeeNames,
+           email: input.email,
           schoolLevel: input.schoolLevel,
           yearLevel: input.yearLevel,
           strand: input.strand,
@@ -382,16 +425,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!row.id) throw new Error("The payment was not returned by the secure submission service.");
     const payer: Student = {
       id: String(row.payer_id),
-      name: input.studentName.trim(),
+      name: attendeeNames[0],
       email: input.email.trim(),
       schoolLevel: input.schoolLevel,
       yearLevel: input.yearLevel,
       strand: input.strand,
       course: input.course,
-      avatar: initials(input.studentName),
+      avatar: initials(attendeeNames[0]),
     };
-    const payment = mapPayment(row, new Map([[payer.id, payer]]), new Map([[offering.id, offering]]));
-    setData((current) => ({ ...current, students: [payer, ...current.students], payments: [payment, ...current.payments] }));
+    const inlineAttendees = Array.isArray(row.attendees) ? row.attendees.map((attendee: DbRow) => mapAttendee(attendee)) : undefined;
+    const payment = mapPayment(row, new Map([[payer.id, payer]]), new Map([[offering.id, offering]]), undefined, inlineAttendees);
+    setData((current) => ({
+      ...current,
+      students: [payer, ...current.students.filter((student) => student.id !== payer.id)],
+      payments: [payment, ...current.payments.filter((item) => item.id !== payment.id)],
+    }));
     return payment;
   };
 
@@ -411,8 +459,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     if (error) throw error;
     const row = ((Array.isArray(updatedRow) ? updatedRow[0] : updatedRow) ?? {}) as DbRow;
+    const attendees = await fetchPaymentAttendees(client, paymentId);
+    const firstAttendee = attendees[0];
     const approvedPayment = {
       ...currentPayment,
+      attendeeCount: attendees.length || currentPayment.attendeeCount,
+      attendees,
       status: "Approved" as const,
       paymentState: "Paid" as const,
       paidAt: String(row.paid_at ?? row.approved_at ?? new Date().toISOString()),
@@ -422,8 +474,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedByName: row.approved_by_name ?? undefined,
       approvedByEmail: row.approved_by_email ?? undefined,
       receiptNumber: String(row.receipt_number ?? receiptNumber),
-      ticketId: String(row.ticket_id ?? ticketId),
-      ticketQrValue: String(row.ticket_qr_value ?? ticketQrValue),
+      ticketId: String(row.ticket_id ?? firstAttendee?.ticketId ?? ticketId),
+      ticketQrValue: String(row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? ticketQrValue),
       rejectionReason: undefined,
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? approvedPayment : payment) }));
@@ -447,8 +499,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     if (error) throw error;
     const row = ((Array.isArray(updatedRow) ? updatedRow[0] : updatedRow) ?? {}) as DbRow;
+    const attendees = await fetchPaymentAttendees(client, paymentId);
+    const firstAttendee = attendees[0];
     const paidPayment = {
       ...currentPayment,
+      attendeeCount: attendees.length || currentPayment.attendeeCount,
+      attendees,
       status: "Approved" as const,
       paymentState: "Paid" as const,
       paidAt: String(row.paid_at ?? new Date().toISOString()),
@@ -458,8 +514,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedByName: row.approved_by_name ?? undefined,
       approvedByEmail: row.approved_by_email ?? undefined,
       receiptNumber: String(row.receipt_number ?? receiptNumber),
-      ticketId: String(row.ticket_id ?? ticketId),
-      ticketQrValue: String(row.ticket_qr_value ?? ticketQrValue),
+      ticketId: String(row.ticket_id ?? firstAttendee?.ticketId ?? ticketId),
+      ticketQrValue: String(row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? ticketQrValue),
       rejectionReason: undefined,
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? paidPayment : payment) }));
@@ -474,8 +530,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
     const row = ((Array.isArray(updatedRow) ? updatedRow[0] : updatedRow) ?? {}) as DbRow;
     const wasApproved = row.status === "Approved";
+    const attendees = await fetchPaymentAttendees(client, paymentId);
     const rejectedPayment = {
       ...currentPayment,
+      attendeeCount: attendees.length || currentPayment.attendeeCount,
+      attendees,
       status: wasApproved ? "Approved" as const : "Rejected" as const,
       paymentState: wasApproved ? "Paid" as const : currentPayment.paymentMode === "PayLater" ? "Unpaid" as const : "Rejected" as const,
       rejectionReason: wasApproved ? row.rejection_reason ?? currentPayment.rejectionReason : String(row.rejection_reason ?? reason),
@@ -483,8 +542,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedByName: wasApproved ? row.approved_by_name ?? currentPayment.approvedByName : undefined,
       approvedByEmail: wasApproved ? row.approved_by_email ?? currentPayment.approvedByEmail : undefined,
       receiptNumber: wasApproved ? row.receipt_number ?? currentPayment.receiptNumber : undefined,
-      ticketId: wasApproved ? row.ticket_id ?? currentPayment.ticketId : undefined,
-      ticketQrValue: wasApproved ? row.ticket_qr_value ?? currentPayment.ticketQrValue : undefined,
+      ticketId: wasApproved ? row.ticket_id ?? attendees[0]?.ticketId ?? currentPayment.ticketId : undefined,
+      ticketQrValue: wasApproved ? row.ticket_qr_value ?? attendees[0]?.ticketQrValue ?? currentPayment.ticketQrValue : undefined,
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? rejectedPayment : payment) }));
     return rejectedPayment;
@@ -552,30 +611,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const checkInTicket = async (value: string): Promise<TicketCheckInResult> => {
     const client = requireSupabase();
     const scannedValue = value.trim();
-    const payment = data.payments.find((item) => item.ticketId && (scannedValue === item.ticketId || scannedValue === item.ticketQrValue));
+    const payment = data.payments.find((item) => getPaymentAttendees(item).some((attendee) => scannedValue === attendee.ticketId || scannedValue === attendee.ticketQrValue));
     if (!payment) return { ok: false, kind: "invalid", message: "This QR code does not match an active JPCS ticket or Pay Later reservation." };
+    const attendee = getPaymentAttendees(payment).find((item) => scannedValue === item.ticketId || scannedValue === item.ticketQrValue);
+    if (!attendee) return { ok: false, kind: "invalid", message: "This QR code does not match an active JPCS ticket or Pay Later reservation." };
     const paymentPending = payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid" && payment.status === "Pending";
     if (payment.status !== "Approved" && !paymentPending) return { ok: false, kind: "invalid", message: "This QR code is not active yet. An admin must approve the payment or reservation first." };
-    if (payment.attendedAt) return { ok: false, kind: "already-checked-in", payment, paymentPending };
+    if (attendee.attendedAt) return { ok: false, kind: "already-checked-in", payment, attendee, paymentPending };
     const attendedAt = new Date().toISOString();
-    const { data: updated, error } = await client.from("hs-payments").update({ attended_at: attendedAt }).eq("id", payment.id).is("attended_at", null).select("attended_at").maybeSingle();
+    const legacyAttendee = attendee.id.startsWith("legacy-");
+    const { data: updated, error } = legacyAttendee
+      ? await client.from("hs-payments").update({ attended_at: attendedAt }).eq("id", payment.id).is("attended_at", null).select("attended_at").maybeSingle()
+      : await client.from("hs-payment-attendees").update({ attended_at: attendedAt }).eq("id", attendee.id).is("attended_at", null).select("attended_at").maybeSingle();
     if (error) throw error;
     if (!updated) {
-      const { data: existing } = await client.from("hs-payments").select("attended_at").eq("id", payment.id).single();
-      return { ok: false, kind: "already-checked-in", payment: { ...payment, attendedAt: existing?.attended_at ?? attendedAt }, paymentPending };
+      const { data: existing } = legacyAttendee
+        ? await client.from("hs-payments").select("attended_at").eq("id", payment.id).single()
+        : await client.from("hs-payment-attendees").select("attended_at").eq("id", attendee.id).single();
+      const existingAttendee = { ...attendee, attendedAt: existing?.attended_at ?? attendedAt };
+      const existingAttendees = getPaymentAttendees(payment).map((item) => item.id === attendee.id ? existingAttendee : item);
+      const existingPayment = { ...payment, attendees: existingAttendees, attendedAt: existingAttendees.length === 1 ? existingAttendees[0].attendedAt : payment.attendedAt };
+      return { ok: false, kind: "already-checked-in", payment: existingPayment, attendee: existingAttendee, paymentPending };
     }
-    const checkedInPayment = { ...payment, attendedAt };
+    const checkedInAttendee = { ...attendee, attendedAt };
+    const checkedInAttendees = getPaymentAttendees(payment).map((item) => item.id === attendee.id ? checkedInAttendee : item);
+    const checkedInPayment = { ...payment, attendees: checkedInAttendees, attendedAt: checkedInAttendees.length === 1 ? attendedAt : payment.attendedAt };
     setData((current) => ({ ...current, payments: current.payments.map((item) => item.id === payment.id ? checkedInPayment : item) }));
-    return { ok: true, kind: "checked-in", payment: checkedInPayment, paymentPending };
+    return { ok: true, kind: "checked-in", payment: checkedInPayment, attendee: checkedInAttendee, paymentPending };
   };
 
-  const undoAttendance = async (paymentId: string) => {
+  const undoAttendance = async (paymentId: string, attendeeId?: string) => {
     const client = requireSupabase();
     const currentPayment = data.payments.find((payment) => payment.id === paymentId);
     if (!currentPayment) return undefined;
-    const { error } = await client.from("hs-payments").update({ attended_at: null }).eq("id", paymentId).not("attended_at", "is", null);
+    const currentAttendees = getPaymentAttendees(currentPayment);
+    const selectedAttendee = attendeeId ? currentAttendees.find((item) => item.id === attendeeId) : currentAttendees[0];
+    if (!selectedAttendee) return currentPayment;
+    const legacyAttendee = selectedAttendee.id.startsWith("legacy-");
+    const { error } = legacyAttendee
+      ? await client.from("hs-payments").update({ attended_at: null }).eq("id", paymentId).not("attended_at", "is", null)
+      : await client.from("hs-payment-attendees").update({ attended_at: null }).eq("id", selectedAttendee.id).not("attended_at", "is", null);
     if (error) throw error;
-    const updatedPayment = { ...currentPayment, attendedAt: undefined };
+    const updatedAttendees = currentAttendees.map((item) => item.id === selectedAttendee.id ? { ...item, attendedAt: undefined } : item);
+    const updatedPayment = { ...currentPayment, attendees: updatedAttendees, attendedAt: updatedAttendees.length === 1 ? undefined : currentPayment.attendedAt };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? updatedPayment : payment) }));
     return updatedPayment;
   };
@@ -672,6 +750,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         description: input.description.trim(),
         amount: input.amount,
         active: input.active,
+        allow_multiple_names: input.allowMultipleNames,
+        max_names: input.maxNames,
         available_methods: input.availableMethods,
         applicable_school_levels: input.applicableSchoolLevels,
         allocations: input.allocations,
@@ -717,6 +797,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         description: offering.description.trim(),
         amount: offering.amount,
         active: offering.active,
+        allow_multiple_names: offering.allowMultipleNames,
+        max_names: offering.maxNames,
         available_methods: offering.availableMethods,
         applicable_school_levels: offering.applicableSchoolLevels,
         allocations: offering.allocations,

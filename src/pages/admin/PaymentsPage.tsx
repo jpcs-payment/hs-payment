@@ -13,6 +13,7 @@ import { formatCurrency, formatDateTime, formatManilaDateTime, isOverdue } from 
 import { downloadPaymentCsv, downloadPaymentPdf } from "../../lib/export";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import type { PaymentMethod, PaymentRecord, PaymentStatus } from "../../types";
+import { getPaymentAttendees } from "../../lib/payment";
 
 const statusFilters: Array<"All statuses" | PaymentStatus> = ["All statuses", "Pending", "Approved", "Rejected"];
 const methodFilters: Array<"All methods" | PaymentMethod> = ["All methods", "Cash", "GCash", "MariBank"];
@@ -62,7 +63,7 @@ function LegacyPaymentsPage() {
           (payment) => method === "All methods" || payment.method === method,
         )
         .filter((payment) =>
-          `${payment.reference} ${payment.studentName} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`
+             `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase()),
         )
@@ -81,7 +82,7 @@ function LegacyPaymentsPage() {
           (payment) => method === "All methods" || payment.method === method,
         )
         .filter((payment) =>
-          `${payment.reference} ${payment.studentName} ${payment.email} ${payment.offeringName}`
+           `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName}`
             .toLowerCase()
             .includes(query.toLowerCase()),
         )
@@ -417,7 +418,7 @@ function LegacyPaymentsPage() {
         title="Approve payment?"
         description={
           approveRecord
-            ? `This will issue a receipt and QR ticket for ${approveRecord.studentName}. The current signed-in admin will be recorded as the approver.`
+            ? `This will issue a receipt and one QR ticket for each attendee: ${getPaymentAttendees(approveRecord).map((attendee) => attendee.name).join(", ")}. The current signed-in admin will be recorded as the approver.`
             : ""
         }
         confirmLabel="Approve and issue ticket"
@@ -430,7 +431,7 @@ function LegacyPaymentsPage() {
         title="Mark Pay Later payment received?"
         description={
           markRecord
-            ? `This activates the attendance QR for ${markRecord.studentName} and sends the payment confirmation email.`
+            ? `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, activates their QR tickets, and sends the payment confirmation email.`
             : ""
         }
         confirmLabel="Mark received"
@@ -570,9 +571,16 @@ function LegacyPayLaterTable({ payments, onView, onMark }: { payments: PaymentRe
   return <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[860px] text-left"><thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400"><tr><th className="px-5 py-4">Student</th><th className="px-5 py-4">Offering</th><th className="px-5 py-4">Method</th><th className="px-5 py-4">Amount</th><th className="px-5 py-4">Deadline</th><th className="px-5 py-4">State</th><th className="px-5 py-4">Actions</th></tr></thead><tbody className="divide-y divide-line">{payments.map((payment) => { const overdue = isOverdue(payment.paymentDeadlineAt); return <tr key={payment.id} className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 text-slate-400">{payment.reference}</p></td><td className="px-5 py-4"><p className="font-semibold text-navy-800">{payment.offeringName}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.method}</td><td className="px-5 py-4 font-extrabold text-navy-900">{formatCurrency(payment.amount)}</td><td className="px-5 py-4"><p className={overdue ? "font-bold text-coral" : "font-semibold text-slate-600"}>{payment.paymentDeadlineAt ? formatManilaDateTime(payment.paymentDeadlineAt) : "-"}</p>{overdue ? <p className="mt-1 flex items-center gap-1 text-[10px] font-bold text-coral"><AlertTriangle className="h-3 w-3" /> Overdue</p> : null}</td><td className="px-5 py-4"><span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Not Paid Yet</span></td><td className="px-5 py-4"><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => onView(payment)}><Eye className="h-3.5 w-3.5" /> View</Button><Button size="sm" onClick={() => onMark(payment)}>Mark received</Button></div></td></tr>; })}</tbody></table></div></Card>;
 }
 
-function PaymentCard({ payment, index, onView }: { payment: PaymentRecord; index: number; onView: () => void }) {
+function LegacyPaymentCard({ payment, index, onView }: { payment: PaymentRecord; index: number; onView: () => void }) {
   const gradients = payment.status === "Approved" ? ["from-emerald-950 via-teal-900 to-navy-800", "from-navy-950 via-blue-900 to-indigo-800"] : payment.status === "Rejected" ? ["from-red-950 via-rose-900 to-navy-900"] : ["from-navy-950 via-navy-800 to-blue-700", "from-slate-950 via-navy-900 to-teal-800"];
+  const attendees = getPaymentAttendees(payment);
   return <article className={`group relative min-w-0 overflow-hidden rounded-3xl bg-gradient-to-br ${gradients[index % gradients.length]} p-5 text-white shadow-float transition duration-300 motion-safe:hover:-translate-y-1`}><img src={jpcsLogo} alt="" aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 opacity-10 transition duration-500 group-hover:rotate-6 group-hover:scale-110" /><div className="relative flex h-full min-h-[270px] flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">{payment.offeringName}</p><p className="mt-2 break-words text-sm font-extrabold">{payment.studentName}</p><p className="mt-1 break-words text-[11px] text-blue-100/65 [overflow-wrap:anywhere]">{payment.email}</p></div><StatusBadge status={payment.status} /></div><div className="mt-7 flex items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/55">Amount</p><p className="mt-1 text-2xl font-extrabold">{formatCurrency(payment.amount)}</p></div><span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-blue-50">{payment.method} · {payment.paymentMode === "PayLater" ? "Pay Later" : "Pay Now"}</span></div><div className="mt-5 grid gap-3 border-t border-white/10 pt-4 text-[11px] text-blue-100/70"><div><p className="uppercase tracking-wide text-blue-100/40">School details</p><p className="mt-1 break-words text-blue-50">{payment.schoolLevel} · {payment.yearLevel}{payment.strand ? ` · ${payment.strand}` : ""}{payment.course ? ` · ${payment.course}` : ""}</p></div><div className="flex items-end justify-between gap-3"><div><p className="uppercase tracking-wide text-blue-100/40">Reference</p><p className="mt-1 break-words font-mono text-[10px] text-blue-50">{payment.reference}</p></div><Button className="shrink-0 border-white/20 bg-white/10 text-white hover:bg-white/20" variant="outline" size="sm" onClick={onView}><Eye className="h-3.5 w-3.5" /> View</Button></div></div></div></article>;
+}
+
+function PaymentCard({ payment, index, onView }: { payment: PaymentRecord; index: number; onView: () => void }) {
+  const attendees = getPaymentAttendees(payment);
+  const gradients = payment.status === "Approved" ? ["from-emerald-950 via-teal-900 to-navy-800", "from-navy-950 via-blue-900 to-indigo-800"] : payment.status === "Rejected" ? ["from-red-950 via-rose-900 to-navy-900"] : ["from-navy-950 via-navy-800 to-blue-700", "from-slate-950 via-navy-900 to-teal-800"];
+  return <article className={`group relative min-w-0 overflow-hidden rounded-3xl bg-gradient-to-br ${gradients[index % gradients.length]} p-5 text-white shadow-float transition duration-300 motion-safe:hover:-translate-y-1`}><img src={jpcsLogo} alt="" aria-hidden="true" className="pointer-events-none absolute -right-10 -top-10 h-48 w-48 opacity-10 transition duration-500 group-hover:rotate-6 group-hover:scale-110" /><div className="relative flex h-full min-h-[270px] flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">{payment.offeringName}</p><p className="mt-2 break-words text-sm font-extrabold">{attendees.map((attendee) => attendee.name).join(", ")}</p><p className="mt-1 break-words text-[11px] text-blue-100/65 [overflow-wrap:anywhere]">{payment.email}</p><p className="mt-2 text-[10px] font-semibold text-blue-100/55">{attendees.length} attendee{attendees.length === 1 ? "" : "s"} · one email card</p></div><StatusBadge status={payment.status} /></div><div className="mt-7 flex items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/55">Total payment</p><p className="mt-1 text-2xl font-extrabold">{formatCurrency(payment.amount)}</p></div><span className="rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-semibold text-blue-50">{payment.method} · {payment.paymentMode === "PayLater" ? "Pay Later" : "Pay Now"}</span></div><div className="mt-5 grid gap-3 border-t border-white/10 pt-4 text-[11px] text-blue-100/70"><div><p className="uppercase tracking-wide text-blue-100/40">School details</p><p className="mt-1 break-words text-blue-50">{payment.schoolLevel} · {payment.yearLevel}{payment.strand ? ` · ${payment.strand}` : ""}{payment.course ? ` · ${payment.course}` : ""}</p></div><div className="flex items-end justify-between gap-3"><div><p className="uppercase tracking-wide text-blue-100/40">Reference</p><p className="mt-1 break-words font-mono text-[10px] text-blue-50">{payment.reference}</p></div><Button className="shrink-0 border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" size="sm" variant="outline" onClick={onView}><Eye className="h-3.5 w-3.5" />View</Button></div></div></div></article>;
 }
 
 function PaymentDetails({
@@ -589,6 +597,7 @@ function PaymentDetails({
   onEmail: () => void;
 }) {
   const schoolDetails = `${payment.schoolLevel} · ${payment.yearLevel}${payment.strand ? ` · ${payment.strand}` : ""}${payment.course ? ` · ${payment.course}` : ""}`;
+  const attendees = getPaymentAttendees(payment);
   const isPayLaterUnpaid =
     payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid";
   const approvedBy = [payment.approvedByName, payment.approvedByEmail]
@@ -602,7 +611,7 @@ function PaymentDetails({
             {payment.offeringName}
           </p>
           <p className="mt-1 break-words text-xs text-slate-500">
-            {payment.studentName} · {formatCurrency(payment.amount)} ·{" "}
+            {attendees.map((attendee) => attendee.name).join(", ")} · {formatCurrency(payment.amount)} total ·{" "}
             {payment.method} · {payment.paymentMode}
           </p>
         </div>
@@ -617,7 +626,7 @@ function PaymentDetails({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Detail label="Payment reference" value={payment.reference} />
-        <Detail label="Student email" value={payment.email} />
+        <Detail label="Payment email" value={payment.email} />
         <Detail label="School details" value={schoolDetails} />
         <Detail label="Submitted" value={formatDateTime(payment.submittedAt)} />
         <Detail label="Approved by" value={approvedBy || "Not recorded"} />
@@ -642,6 +651,12 @@ function PaymentDetails({
           label="Account / cashier reference"
           value={payment.senderReference ?? "Not provided"}
         />
+      </div>
+      <div className="rounded-2xl border border-line bg-mist p-4">
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Attendees and QR tickets</p>
+        <div className="mt-3 space-y-2">
+          {attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs"><span className="break-words font-semibold text-slate-600">{attendee.name}</span><span className="shrink-0 font-mono text-[10px] text-navy-900">{attendee.ticketId ?? "Not issued yet"}</span></div>)}
+        </div>
       </div>
       <div className="rounded-2xl border border-line bg-mist p-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">

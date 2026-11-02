@@ -38,6 +38,15 @@ export interface PaymentMethodConfig {
   qrImage?: string;
 }
 
+export interface PaymentAttendee {
+  id: string;
+  name: string;
+  position: number;
+  ticketId?: string;
+  ticketQrValue?: string;
+  attendedAt?: string;
+}
+
 export interface PaymentOffering {
   id: string;
   slug: string;
@@ -45,6 +54,8 @@ export interface PaymentOffering {
   description: string;
   amount: number;
   active: boolean;
+  allowMultipleNames: boolean;
+  maxNames: number;
   availableMethods: PaymentMethod[];
   applicableSchoolLevels: SchoolLevel[];
   allocations: PaymentAllocation[];
@@ -68,6 +79,8 @@ export interface PaymentRecord {
   offeringId: string;
   offeringName: string;
   amount: number;
+  attendeeCount: number;
+  attendees: PaymentAttendee[];
   allocations: PaymentAllocation[];
   method: PaymentMethod;
   paymentMode: PaymentMode;
@@ -124,6 +137,7 @@ export interface NewPaymentInput {
   idempotencyKey?: string;
   studentId?: string;
   studentName: string;
+  attendeeNames?: string[];
   email: string;
   schoolLevel: SchoolLevel;
   yearLevel: string;
@@ -147,6 +161,8 @@ export interface NewPaymentOfferingInput {
   description: string;
   amount: number;
   active: boolean;
+  allowMultipleNames: boolean;
+  maxNames: number;
   availableMethods: PaymentMethod[];
   applicableSchoolLevels: SchoolLevel[];
   allocations: PaymentAllocation[];
@@ -160,7 +176,7 @@ export interface PaymentOfferingImageUpdate {
 }
 
 export type TicketCheckInResult =
-  | { ok: true; kind: "checked-in"; payment: PaymentRecord; paymentPending?: boolean }
-  | { ok: false; kind: "already-checked-in"; payment: PaymentRecord; paymentPending?: boolean }
+  | { ok: true; kind: "checked-in"; payment: PaymentRecord; attendee: PaymentAttendee; paymentPending?: boolean }
+  | { ok: false; kind: "already-checked-in"; payment: PaymentRecord; attendee: PaymentAttendee; paymentPending?: boolean }
   | { ok: false; kind: "unpaid"; payment: PaymentRecord }
   | { ok: false; kind: "invalid"; message: string };

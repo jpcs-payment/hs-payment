@@ -9,7 +9,8 @@ import { useToast } from "../../components/Toast";
 import { downloadCsv, downloadPdf } from "../../lib/export";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import { getPageCount, getPageItems } from "../../lib/pagination";
-import type { PaymentRecord, TicketCheckInResult } from "../../types";
+import { getPaymentAttendees } from "../../lib/payment";
+import type { PaymentAttendee, PaymentRecord, TicketCheckInResult } from "../../types";
 
 interface ScanHistoryItem {
   id: string;
@@ -17,8 +18,13 @@ interface ScanHistoryItem {
   result: TicketCheckInResult;
 }
 
+interface AttendanceEntry {
+  payment: PaymentRecord;
+  attendee: PaymentAttendee;
+}
+
 const isUnpaidPayLater = (payment: PaymentRecord) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid" && payment.status === "Pending";
-const isAttendanceEligible = (payment: PaymentRecord) => Boolean(payment.ticketId && (payment.status === "Approved" || isUnpaidPayLater(payment)));
+const isAttendanceEligible = (payment: PaymentRecord, attendee: PaymentAttendee) => Boolean(attendee.ticketId && (payment.status === "Approved" || isUnpaidPayLater(payment)));
 const manilaDateTimeFormatter = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 const manilaDateTimeParts = (value: string) => Object.fromEntries(manilaDateTimeFormatter.formatToParts(new Date(value)).map((part) => [part.type, part.value]));
 const manilaDateKey = (value: string) => { const parts = manilaDateTimeParts(value); return `${parts.year}-${parts.month}-${parts.day}`; };
@@ -54,19 +60,19 @@ export function AttendancePage() {
   const [dateTo, setDateTo] = useState("");
   const [timeFrom, setTimeFrom] = useState("");
   const [timeTo, setTimeTo] = useState("");
-  const [undoId, setUndoId] = useState<string | null>(null);
+  const [undoId, setUndoId] = useState<{ paymentId: string; attendeeId: string } | null>(null);
   const [undoLoading, setUndoLoading] = useState(false);
   const [page, setPage] = useState(1);
 
-  const eligiblePayments = useMemo(
-    () => data.payments.filter(isAttendanceEligible),
+  const eligiblePayments = useMemo<AttendanceEntry[]>(
+    () => data.payments.flatMap((payment) => getPaymentAttendees(payment).filter((attendee) => isAttendanceEligible(payment, attendee)).map((attendee) => ({ payment, attendee }))),
     [data.payments],
   );
   const events = useMemo(
     () => [
       "All types",
       ...Array.from(
-        new Set(eligiblePayments.map((payment) => payment.offeringName)),
+        new Set(eligiblePayments.map((entry) => entry.payment.offeringName)),
       ),
     ],
     [eligiblePayments],
@@ -74,7 +80,8 @@ export function AttendancePage() {
   const filteredAttendance = useMemo(
     () =>
       eligiblePayments
-        .filter((payment) => {
+        .filter((entry) => {
+          const { payment, attendee } = entry;
           if (
             eventFilter !== "All types" &&
             payment.offeringName !== eventFilter
@@ -82,38 +89,38 @@ export function AttendancePage() {
             return false;
           if (
             query &&
-            !`${payment.studentName} ${payment.email} ${payment.reference} ${payment.ticketId ?? ""}`
+            !`${attendee.name} ${payment.studentName} ${payment.email} ${payment.reference} ${attendee.ticketId ?? ""}`
               .toLowerCase()
               .includes(query.toLowerCase())
           )
             return false;
           if (
             dateFrom &&
-            (!payment.attendedAt ||
-              manilaDateKey(payment.attendedAt) < dateFrom)
+            (!attendee.attendedAt ||
+              manilaDateKey(attendee.attendedAt) < dateFrom)
           )
             return false;
           if (
             dateTo &&
-            (!payment.attendedAt || manilaDateKey(payment.attendedAt) > dateTo)
+            (!attendee.attendedAt || manilaDateKey(attendee.attendedAt) > dateTo)
           )
             return false;
           if (timeFrom || timeTo) {
-            if (!payment.attendedAt) return false;
-            const time = manilaTimeKey(payment.attendedAt);
+            if (!attendee.attendedAt) return false;
+            const time = manilaTimeKey(attendee.attendedAt);
             if (timeFrom && time < timeFrom) return false;
             if (timeTo && time > timeTo) return false;
           }
           return true;
         })
-        .sort((a, b) => (b.attendedAt ?? "").localeCompare(a.attendedAt ?? "")),
+        .sort((a, b) => (b.attendee.attendedAt ?? "").localeCompare(a.attendee.attendedAt ?? "")),
     [dateFrom, dateTo, eligiblePayments, eventFilter, query, timeFrom, timeTo],
   );
   const checkedInCount = filteredAttendance.filter(
-    (payment) => payment.attendedAt,
+    (entry) => entry.attendee.attendedAt,
   ).length;
   const pendingAfterAttendance = filteredAttendance.filter(
-    (payment) => payment.attendedAt && isUnpaidPayLater(payment),
+    (entry) => entry.attendee.attendedAt && isUnpaidPayLater(entry.payment),
   ).length;
   const pageCount = getPageCount(filteredAttendance.length, PAGE_SIZE);
   const visibleAttendance = getPageItems(filteredAttendance, page, PAGE_SIZE);
@@ -176,21 +183,21 @@ export function AttendancePage() {
           title: checkInResult.paymentPending
             ? "Attendance recorded, payment pending"
             : "Attendance recorded",
-          message: checkInResult.paymentPending
-            ? `${checkInResult.payment.studentName} attended, but ${formatCurrency(checkInResult.payment.amount)} is still unpaid.`
-            : `${checkInResult.payment.studentName} is checked in for ${checkInResult.payment.offeringName}.`,
+             message: checkInResult.paymentPending
+             ? `${checkInResult.attendee.name} attended, but ${formatCurrency(checkInResult.payment.amount)} is still unpaid.`
+             : `${checkInResult.attendee.name} is checked in for ${checkInResult.payment.offeringName}.`,
         });
       else if (checkInResult.kind === "already-checked-in")
         pushToast({
           tone: "info",
           title: "Already checked in",
-          message: `${checkInResult.payment.studentName} was checked in at ${formatDateTime(checkInResult.payment.attendedAt ?? "")}.`,
+           message: `${checkInResult.attendee.name} was checked in at ${formatDateTime(checkInResult.attendee.attendedAt ?? "")}.`,
         });
       else if (checkInResult.kind === "unpaid")
         pushToast({
           tone: "error",
           title: "Payment not received",
-          message: `${checkInResult.payment.studentName}'s Pay Later payment is still marked Not Paid Yet.`,
+           message: `${checkInResult.payment.studentName}'s Pay Later payment is still marked Not Paid Yet.`,
         });
       else
         pushToast({
@@ -298,23 +305,23 @@ export function AttendancePage() {
     setCameraError("");
   };
 
-  const attendanceExportHeaders = ["Type", "Student", "Email", "Reference", "Ticket ID", "Amount", "Payment method", "Payment mode", "Payment state", "Attendance status", "Checked in at"];
-  const attendanceExportRows = filteredAttendance.map((payment) => [
+  const attendanceExportHeaders = ["Type", "Attendee", "Email", "Reference", "Ticket ID", "Amount", "Payment method", "Payment mode", "Payment state", "Attendance status", "Checked in at"];
+  const attendanceExportRows = filteredAttendance.map(({ payment, attendee }) => [
       payment.offeringName,
-      payment.studentName,
+      attendee.name,
       payment.email,
       payment.reference,
-      payment.ticketId ?? "",
+      attendee.ticketId ?? "",
       String(payment.amount),
       payment.method,
       payment.paymentMode,
       payment.paymentState,
-      payment.attendedAt
+      attendee.attendedAt
         ? isUnpaidPayLater(payment)
           ? "Checked in · Payment pending"
           : "Checked in"
         : "Not checked in",
-      payment.attendedAt ? formatDateTime(payment.attendedAt) : "",
+      attendee.attendedAt ? formatDateTime(attendee.attendedAt) : "",
   ]);
   const exportCsv = () => {
     downloadCsv(`jpcs-attendance-${new Date().toISOString().slice(0, 10)}.csv`, attendanceExportHeaders, attendanceExportRows);
@@ -330,12 +337,12 @@ export function AttendancePage() {
     if (!undoId) return;
     setUndoLoading(true);
     try {
-      const payment = await undoAttendance(undoId);
-      if (payment)
-        pushToast({
-          tone: "success",
-          title: "Attendance removed",
-          message: `${payment.studentName} can be checked in again.`,
+       const payment = await undoAttendance(undoId.paymentId, undoId.attendeeId);
+       if (payment)
+         pushToast({
+           tone: "success",
+           title: "Attendance removed",
+           message: `${getPaymentAttendees(payment).find((attendee) => attendee.id === undoId.attendeeId)?.name ?? payment.studentName} can be checked in again.`,
         });
       setUndoId(null);
     } catch (error) {
@@ -446,8 +453,8 @@ export function AttendancePage() {
         onExportPdf={exportPdf}
       />
       <AttendanceList
-        payments={visibleAttendance}
-        onUndo={(payment) => setUndoId(payment.id)}
+        entries={visibleAttendance}
+        onUndo={(entry) => setUndoId({ paymentId: entry.payment.id, attendeeId: entry.attendee.id })}
         page={page}
         pageCount={pageCount}
         totalItems={filteredAttendance.length}
@@ -501,7 +508,7 @@ function LegacyScannerCard({ cameraDevices, cameraError, cameraStarting, isScann
 }
 
 function AttendanceList({
-  payments,
+  entries,
   onUndo,
   page,
   pageCount,
@@ -509,15 +516,15 @@ function AttendanceList({
   pageSize,
   onPageChange,
 }: {
-  payments: PaymentRecord[];
-  onUndo: (payment: PaymentRecord) => void;
+  entries: AttendanceEntry[];
+  onUndo: (entry: AttendanceEntry) => void;
   page: number;
   pageCount: number;
   totalItems: number;
   pageSize: number;
   onPageChange: (page: number) => void;
 }) {
-  if (!payments.length)
+  if (!entries.length)
     return (
       <Card className="overflow-hidden">
         <div className="border-b border-line px-5 py-5 sm:px-6">
@@ -558,23 +565,24 @@ function AttendanceList({
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
-            {payments.map((payment) => (
-              <AttendanceRow
-                key={payment.id}
-                payment={payment}
-                onUndo={onUndo}
-              />
+             {entries.map((entry) => (
+               <AttendanceRow
+                 key={entry.attendee.id}
+                 entry={entry}
+                 onUndo={onUndo}
+               />
             ))}
           </tbody>
         </table>
       </div>
       <div className="space-y-3 p-4 md:hidden">
-        {payments.map((payment) => (
-          <div key={payment.id} className="rounded-2xl border border-line p-4">
+         {entries.map((entry) => {
+           const { payment, attendee } = entry;
+           return <div key={attendee.id} className="rounded-2xl border border-line p-4">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="break-words text-sm font-bold text-navy-900">
-                  {payment.studentName}
+                   {attendee.name}
                 </p>
                 <p className="mt-1 break-words text-xs text-slate-400">
                   {payment.email}
@@ -586,37 +594,38 @@ function AttendanceList({
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
               <Detail label="Type" value={payment.offeringName} />
-              <Detail label="Ticket" value={payment.ticketId ?? "-"} />
+               <Detail label="Ticket" value={attendee.ticketId ?? "-"} />
               <Detail
                 label="Attendance"
-                value={payment.attendedAt ? "Checked in" : "Not checked in"}
+                 value={attendee.attendedAt ? "Checked in" : "Not checked in"}
               />
               <Detail
                 label="Payment"
                 value={isUnpaidPayLater(payment) ? "Payment pending" : "Paid"}
               />
             </dl>
-            {payment.attendedAt ? (
+            {attendee.attendedAt ? (
               <Button
                 className="mt-4 w-full"
                 size="sm"
                 variant="outline"
-                onClick={() => onUndo(payment)}
+                 onClick={() => onUndo(entry)}
               >
                 <RotateCcw className="h-3.5 w-3.5" /> Undo check-in
               </Button>
             ) : null}
-          </div>
-        ))}
+           </div>;
+         })}
       </div>
       <Pagination page={page} pageCount={pageCount} totalItems={totalItems} pageSize={pageSize} onPageChange={onPageChange} />
     </Card>
   );
 }
 
-function AttendanceRow({ payment, onUndo }: { payment: PaymentRecord; onUndo: (payment: PaymentRecord) => void }) {
+function AttendanceRow({ entry, onUndo }: { entry: AttendanceEntry; onUndo: (entry: AttendanceEntry) => void }) {
+  const { payment, attendee } = entry;
   const pending = isUnpaidPayLater(payment);
-  return <tr className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{payment.studentName}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.offeringName}</td><td className="px-5 py-4 font-mono text-[10px] font-bold text-navy-800">{payment.ticketId}</td><td className="px-5 py-4">{payment.attendedAt ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Checked in</span> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Not checked in</span>}</td><td className="px-5 py-4">{pending ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Payment pending</span> : <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Paid</span>}</td><td className="px-5 py-4 font-semibold text-slate-600">{payment.attendedAt ? formatDateTime(payment.attendedAt) : "-"}</td><td className="px-5 py-4">{payment.attendedAt ? <Button size="sm" variant="outline" onClick={() => onUndo(payment)}><RotateCcw className="h-3.5 w-3.5" /> Undo</Button> : <span className="text-slate-400">-</span>}</td></tr>;
+  return <tr className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{attendee.name}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.offeringName}</td><td className="px-5 py-4 font-mono text-[10px] font-bold text-navy-800">{attendee.ticketId}</td><td className="px-5 py-4">{attendee.attendedAt ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Checked in</span> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Not checked in</span>}</td><td className="px-5 py-4">{pending ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Payment pending</span> : <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Paid</span>}</td><td className="px-5 py-4 font-semibold text-slate-600">{attendee.attendedAt ? formatDateTime(attendee.attendedAt) : "-"}</td><td className="px-5 py-4">{attendee.attendedAt ? <Button size="sm" variant="outline" onClick={() => onUndo(entry)}><RotateCcw className="h-3.5 w-3.5" /> Undo</Button> : <span className="text-slate-400">-</span>}</td></tr>;
 }
 
 function LegacyAttendanceList({ payments }: { payments: PaymentRecord[] }) {
@@ -624,7 +633,7 @@ function LegacyAttendanceList({ payments }: { payments: PaymentRecord[] }) {
 }
 
 function ScanHistory({ history }: { history: ScanHistoryItem[] }) {
-  return <Card className="p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Recent scans</p><h3 className="mt-1 text-base font-extrabold text-navy-900">Session history</h3></div><ScanLine className="h-5 w-5 text-navy-700" /></div>{history.length ? <div className="mt-4 space-y-2">{history.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2.5 text-xs"><span className="min-w-0 truncate font-semibold text-navy-800">{"payment" in item.result ? item.result.payment.studentName : item.result.message}</span><span className={`shrink-0 text-[10px] font-bold ${item.result.kind === "checked-in" ? item.result.paymentPending ? "text-amber-700" : "text-emerald-700" : item.result.kind === "already-checked-in" ? "text-amber-700" : "text-coral"}`}>{item.result.kind === "checked-in" ? item.result.paymentPending ? "Recorded · unpaid" : "Recorded" : item.result.kind === "already-checked-in" ? "Duplicate" : item.result.kind === "unpaid" ? "Unpaid" : "Rejected"}</span></div>)}</div> : <p className="mt-4 text-xs leading-5 text-slate-500">Scan results will appear here during this session.</p>}</Card>;
+  return <Card className="p-5 sm:p-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Recent scans</p><h3 className="mt-1 text-base font-extrabold text-navy-900">Session history</h3></div><ScanLine className="h-5 w-5 text-navy-700" /></div>{history.length ? <div className="mt-4 space-y-2">{history.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2.5 text-xs"><span className="min-w-0 truncate font-semibold text-navy-800">{"attendee" in item.result ? item.result.attendee.name : "payment" in item.result ? item.result.payment.studentName : item.result.message}</span><span className={`shrink-0 text-[10px] font-bold ${item.result.kind === "checked-in" ? item.result.paymentPending ? "text-amber-700" : "text-emerald-700" : item.result.kind === "already-checked-in" ? "text-amber-700" : "text-coral"}`}>{item.result.kind === "checked-in" ? item.result.paymentPending ? "Recorded · unpaid" : "Recorded" : item.result.kind === "already-checked-in" ? "Duplicate" : item.result.kind === "unpaid" ? "Unpaid" : "Rejected"}</span></div>)}</div> : <p className="mt-4 text-xs leading-5 text-slate-500">Scan results will appear here during this session.</p>}</Card>;
 }
 
 function ScanResult({ result, onReset }: { result: TicketCheckInResult | null; onReset: () => void }) {
@@ -633,7 +642,7 @@ function ScanResult({ result, onReset }: { result: TicketCheckInResult | null; o
   const isDuplicate = result.kind === "already-checked-in";
   const paymentPending = (isSuccess || isDuplicate) ? result.paymentPending : false;
   const payment = "payment" in result ? result.payment : null;
-  return <Card className={`overflow-hidden ${isSuccess ? "border-emerald-200" : isDuplicate ? "border-amber-200" : "border-red-200"}`}><div className={`border-b px-5 py-4 sm:px-6 ${isSuccess ? "bg-emerald-50" : isDuplicate ? "bg-amber-50" : "bg-red-50"}`}><div className="flex items-center gap-3">{isSuccess ? <CheckCircle2 className="h-5 w-5 text-emerald-700" /> : isDuplicate ? <Clock3 className="h-5 w-5 text-amber-700" /> : <XCircle className="h-5 w-5 text-red-700" />}<div><p className={`text-xs font-bold uppercase tracking-[0.1em] ${isSuccess ? "text-emerald-900" : isDuplicate ? "text-amber-900" : "text-red-900"}`}>{isSuccess ? paymentPending ? "Attendance recorded · payment pending" : "Attendance recorded" : isDuplicate ? "Already checked in" : result.kind === "unpaid" ? "Payment pending" : "Ticket rejected"}</p><p className="mt-1 text-[11px] leading-5 text-slate-600">{isSuccess ? paymentPending ? "The attendee entered the event, but the Pay Later amount still needs to be collected." : "This ticket has been marked as attended." : isDuplicate ? "This ticket cannot be checked in twice." : result.kind === "unpaid" ? "The Pay Later payment remains unpaid." : result.message}</p></div></div></div>{payment ? <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6"><Detail label="Student" value={payment.studentName} /><Detail label="Type" value={payment.offeringName} /><Detail label="Ticket ID" value={payment.ticketId ?? "-"} /><Detail label="Amount" value={formatCurrency(payment.amount)} /><Detail label="Payment state" value={payment.paymentState === "Unpaid" ? "Not Paid Yet" : payment.paymentState} /><Detail label={payment.attendedAt ? "Checked in at" : "Attendance"} value={payment.attendedAt ? formatDateTime(payment.attendedAt) : "Not checked in"} /></div> : null}<div className="flex justify-end border-t border-line px-5 py-4 sm:px-6"><Button variant="outline" size="sm" onClick={onReset}>Scan next ticket</Button></div></Card>;
+  return <Card className={`overflow-hidden ${isSuccess ? "border-emerald-200" : isDuplicate ? "border-amber-200" : "border-red-200"}`}><div className={`border-b px-5 py-4 sm:px-6 ${isSuccess ? "bg-emerald-50" : isDuplicate ? "bg-amber-50" : "bg-red-50"}`}><div className="flex items-center gap-3">{isSuccess ? <CheckCircle2 className="h-5 w-5 text-emerald-700" /> : isDuplicate ? <Clock3 className="h-5 w-5 text-amber-700" /> : <XCircle className="h-5 w-5 text-red-700" />}<div><p className={`text-xs font-bold uppercase tracking-[0.1em] ${isSuccess ? "text-emerald-900" : isDuplicate ? "text-amber-900" : "text-red-900"}`}>{isSuccess ? paymentPending ? "Attendance recorded · payment pending" : "Attendance recorded" : isDuplicate ? "Already checked in" : result.kind === "unpaid" ? "Payment pending" : "Ticket rejected"}</p><p className="mt-1 text-[11px] leading-5 text-slate-600">{isSuccess ? paymentPending ? "The attendee entered the event, but the Pay Later amount still needs to be collected." : "This ticket has been marked as attended." : isDuplicate ? "This ticket cannot be checked in twice." : result.kind === "unpaid" ? "The Pay Later payment remains unpaid." : result.message}</p></div></div></div>{payment ? <div className="grid gap-4 p-5 sm:grid-cols-2 sm:p-6"><Detail label="Attendee" value={"attendee" in result ? result.attendee.name : payment.studentName} /><Detail label="Type" value={payment.offeringName} /><Detail label="Ticket ID" value={"attendee" in result ? result.attendee.ticketId ?? "-" : payment.ticketId ?? "-"} /><Detail label="Amount" value={formatCurrency(payment.amount)} /><Detail label="Payment state" value={payment.paymentState === "Unpaid" ? "Not Paid Yet" : payment.paymentState} /><Detail label={"attendee" in result && result.attendee.attendedAt ? "Checked in at" : "Attendance"} value={"attendee" in result && result.attendee.attendedAt ? formatDateTime(result.attendee.attendedAt) : "Not checked in"} /></div> : null}<div className="flex justify-end border-t border-line px-5 py-4 sm:px-6"><Button variant="outline" size="sm" onClick={onReset}>Scan next ticket</Button></div></Card>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
