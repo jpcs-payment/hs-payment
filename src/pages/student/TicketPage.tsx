@@ -10,7 +10,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
 import { BRANDING, createTicketQrValue } from "../../lib/branding";
-import { getPaymentAttendees } from "../../lib/payment";
+import { getPaymentAttendees, getPaymentPayerIds } from "../../lib/payment";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 
 export function TicketPage() {
@@ -19,7 +19,7 @@ export function TicketPage() {
   const navigate = useNavigate();
   const { pushToast } = useToast();
   const [emailOpen, setEmailOpen] = useState(false);
-  const studentPayments = data.payments.filter((payment) => payment.studentId === session?.studentId).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  const studentPayments = data.payments.filter((payment) => session?.studentId && getPaymentPayerIds(payment).includes(session.studentId)).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   const payment = paymentId ? studentPayments.find((item) => item.id === paymentId) : studentPayments.find((item) => item.status === "Approved");
 
   if (!payment) return <div className="mx-auto max-w-2xl"><EmptyState icon={TicketIcon} title="No ticket to preview" description="An approved payment will generate a receipt and QR ticket." /><div className="mt-5 flex flex-wrap justify-center gap-3"><Button variant="outline" onClick={() => navigate("/student/history")}>Payment history</Button><Button onClick={() => navigate("/student/payment")}>Make a payment</Button></div></div>;

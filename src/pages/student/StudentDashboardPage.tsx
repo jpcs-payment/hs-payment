@@ -6,6 +6,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { useApp } from "../../context/AppContext";
 import { formatCurrency, formatDate, formatDateTime } from "../../lib/utils";
 import { getLatestPayment } from "../../data/seed";
+import { getPaymentPayerIds } from "../../lib/payment";
 
 export function StudentDashboardPage() {
   const { data, session } = useApp();
@@ -13,7 +14,7 @@ export function StudentDashboardPage() {
   const student = data.students.find((item) => item.id === session?.studentId);
   if (!student) return <EmptyState title="Student profile unavailable" description="Choose a demo student again from the login screen to continue." />;
 
-  const payments = data.payments.filter((payment) => payment.studentId === student.id).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
+  const payments = data.payments.filter((payment) => getPaymentPayerIds(payment).includes(student.id)).sort((a, b) => b.submittedAt.localeCompare(a.submittedAt));
   const latestPayment = getLatestPayment(data.payments, student.id);
   const approvedTotal = payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0);
   const pendingCount = payments.filter((payment) => payment.status === "Pending").length;

@@ -42,6 +42,7 @@ export interface PaymentAttendee {
   id: string;
   name: string;
   position: number;
+  payerId?: string;
   ticketId?: string;
   ticketQrValue?: string;
   attendedAt?: string;

@@ -61,6 +61,15 @@ const attendeesFor = (payment) => Array.isArray(payment?.attendees) && payment.a
 const attendeeNames = (payment) => attendeesFor(payment).map((attendee) => String(attendee.name ?? "").trim()).filter(Boolean);
 const attendeeListHtml = (payment) => attendeesFor(payment).map((attendee, index) => `<li style="margin:0 0 7px;color:#0b1f3a"><strong>${escapeHtml(attendee.name)}</strong><span style="color:#7a8799"> · Ticket ${escapeHtml(attendee.ticketId ?? `#${index + 1}`)}</span></li>`).join("");
 const attendeeListText = (payment) => attendeesFor(payment).map((attendee, index) => `${index + 1}. ${attendee.name} · Ticket ${attendee.ticketId ?? "-"}`).join("\n");
+const attachmentBaseName = (name, index) => {
+  const normalized = String(name ?? "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+  return normalized || `attendee-${index + 1}`;
+};
 const field = (label, value) => `<td style="width:50%;padding:9px 10px;border:1px solid #d9e2ef;border-radius:10px;vertical-align:top;overflow-wrap:anywhere;word-break:break-word"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7a8799;font-weight:700">${escapeHtml(label)}</div><div style="margin-top:5px;color:#0b1f3a;font-size:13px;font-weight:700;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(value)}</div></td>`;
 
 const createHtml = (payment, payLater) => {
@@ -263,11 +272,17 @@ const sendEmail = async (payment, payLater, { verify = false, requireAdmin = fal
   const { apiKey, from, fromName, replyTo } = config();
   if (!apiKey || !isEmail(from)) return { status: 503, body: { error: "Brevo is not configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL in the deployment environment." } };
 
+  const usedAttachmentNames = new Set();
   const qrAttachments = await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
     const qrBuffer = await QRCode.toBuffer(attendee.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
+    const baseName = attachmentBaseName(attendee.name, index);
+    let fileName = baseName;
+    let suffix = 2;
+    while (usedAttachmentNames.has(fileName)) fileName = `${baseName}-${suffix++}`;
+    usedAttachmentNames.add(fileName);
     return {
       content: qrBuffer.toString("base64"),
-      name: `jpcs-lcc-attendance-qr-${index + 1}.png`,
+      name: `jpcs-lcc-attendance-qr-${fileName}.png`,
     };
   }));
   const response = await fetch("https://api.brevo.com/v3/smtp/email", {

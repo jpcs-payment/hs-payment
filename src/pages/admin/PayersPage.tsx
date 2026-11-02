@@ -11,10 +11,13 @@ import { formatCurrency, formatDateTime } from "../../lib/utils";
 import { downloadCsv, downloadPdf } from "../../lib/export";
 import { getLatestPayment } from "../../data/seed";
 import { getPageCount, getPageItems } from "../../lib/pagination";
+import { getPaymentPayerIds } from "../../lib/payment";
 import type { PaymentRecord, SchoolLevel, Student } from "../../types";
 
 const levelFilters: Array<"All levels" | SchoolLevel> = ["All levels", "Junior High School", "Senior High School", "College"];
 const PAGE_SIZE = 10;
+const paymentBelongsToPayer = (payment: PaymentRecord, payerId: string) => getPaymentPayerIds(payment).includes(payerId);
+const paymentsForPayer = (payments: PaymentRecord[], payerId: string) => payments.filter((payment) => paymentBelongsToPayer(payment, payerId));
 
 function LegacyPayersPage() {
   const { data } = useApp();
@@ -22,9 +25,9 @@ function LegacyPayersPage() {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<(typeof levelFilters)[number]>("All levels");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const studentsWithPayments = data.students.filter((student) => data.payments.some((payment) => payment.studentId === student.id)).length;
-  const approvedPayers = data.students.filter((student) => data.payments.some((payment) => payment.studentId === student.id && payment.status === "Approved")).length;
-  const pendingPayers = data.students.filter((student) => data.payments.some((payment) => payment.studentId === student.id && payment.status === "Pending")).length;
+  const studentsWithPayments = data.students.filter((student) => data.payments.some((payment) => paymentBelongsToPayer(payment, student.id))).length;
+  const approvedPayers = data.students.filter((student) => data.payments.some((payment) => paymentBelongsToPayer(payment, student.id) && payment.status === "Approved")).length;
+  const pendingPayers = data.students.filter((student) => data.payments.some((payment) => paymentBelongsToPayer(payment, student.id) && payment.status === "Pending")).length;
   const filteredStudents = useMemo(() => data.students.filter((student) => level === "All levels" || student.schoolLevel === level).filter((student) => `${student.name} ${student.email} ${student.yearLevel} ${student.strand ?? ""} ${student.course ?? ""}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => a.name.localeCompare(b.name)), [data.students, level, query]);
   const selectedStudent = selectedId ? data.students.find((student) => student.id === selectedId) ?? null : null;
 
@@ -33,7 +36,7 @@ function LegacyPayersPage() {
 
 function LegacyPayersExportPage() {
   const { data } = useApp();
-  const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"], data.students.map((student) => { const payments = data.payments.filter((payment) => payment.studentId === student.id); return [student.name, student.email, student.schoolLevel, student.yearLevel, student.strand, student.course, payments.length, payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0)]; }));
+  const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"], data.students.map((student) => { const payments = paymentsForPayer(data.payments, student.id); return [student.name, student.email, student.schoolLevel, student.yearLevel, student.strand, student.course, payments.length, payments.filter((payment) => payment.status === "Approved").reduce((total, payment) => total + payment.amount, 0)]; }));
   return <div className="space-y-4"><div className="flex justify-end"><Button size="sm" variant="outline" onClick={exportPayers} disabled={!data.students.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button></div><LegacyPayersPage /></div>;
 }
 
@@ -53,19 +56,19 @@ function PayersWorkspace() {
   const [page, setPage] = useState(1);
   const activeStudents = data.students.filter((student) => !student.archivedAt);
   const studentsWithPayments = activeStudents.filter((student) =>
-    data.payments.some((payment) => payment.studentId === student.id),
+    data.payments.some((payment) => paymentBelongsToPayer(payment, student.id)),
   ).length;
   const approvedPayers = activeStudents.filter((student) =>
-    data.payments.some(
-      (payment) =>
-        payment.studentId === student.id && payment.status === "Approved",
-    ),
+      data.payments.some(
+        (payment) =>
+          paymentBelongsToPayer(payment, student.id) && payment.status === "Approved",
+      ),
   ).length;
   const pendingPayers = activeStudents.filter((student) =>
-    data.payments.some(
-      (payment) =>
-        payment.studentId === student.id && payment.status === "Pending",
-    ),
+      data.payments.some(
+        (payment) =>
+          paymentBelongsToPayer(payment, student.id) && payment.status === "Pending",
+      ),
   ).length;
   const filteredStudents = useMemo(
     () =>
@@ -100,7 +103,7 @@ function PayersWorkspace() {
 
   const payerExportHeaders = ["Payer", "Email", "School level", "Year level", "Strand", "Course", "Payment count", "Approved total"];
   const payerExportRows = () => activeStudents.map((student) => {
-    const payments = data.payments.filter((payment) => payment.studentId === student.id);
+    const payments = paymentsForPayer(data.payments, student.id);
     return [
       student.name,
       student.email,
@@ -232,9 +235,7 @@ function PayersWorkspace() {
               <PayerArchiveRow
                 key={student.id}
                 student={student}
-                payments={data.payments.filter(
-                  (payment) => payment.studentId === student.id,
-                )}
+                payments={paymentsForPayer(data.payments, student.id)}
                 onView={() => setSelectedId(student.id)}
                 onArchive={() => setArchiveId(student.id)}
               />
@@ -266,9 +267,7 @@ function PayersWorkspace() {
         {selectedStudent ? (
           <PayerDetails
             student={selectedStudent}
-            payments={data.payments.filter(
-              (payment) => payment.studentId === selectedStudent.id,
-            )}
+            payments={paymentsForPayer(data.payments, selectedStudent.id)}
             onViewPayments={() => {
               setSelectedId(null);
             }}

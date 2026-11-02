@@ -3,7 +3,7 @@ import { cloneInitialData } from "../data/seed";
 import { createTicketQrValue } from "../lib/branding";
 import { sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
 import { initials, createReference } from "../lib/utils";
-import { getPaymentAttendees } from "../lib/payment";
+import { getPaymentAttendees, getPaymentPayerIds } from "../lib/payment";
 import { requireSupabase, supabase } from "../lib/supabase";
 import type {
   AppData,
@@ -138,6 +138,7 @@ const mapAttendee = (row: DbRow): PaymentAttendee => ({
   id: String(row.id),
   name: String(row.name ?? ""),
   position: Math.max(1, Number(row.position) || 1),
+  payerId: row.payer_id ?? undefined,
   ticketId: row.ticket_id ?? undefined,
   ticketQrValue: row.ticket_qr_value ?? undefined,
   attendedAt: row.attended_at ?? undefined,
@@ -157,7 +158,7 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     reference: String(row.reference),
     studentId: String(row.payer_id),
     studentName: firstAttendee?.name ?? payer?.name ?? String(row.student_name ?? ""),
-    email: payer?.email ?? String(row.email ?? ""),
+    email: payer?.email ?? String(row.payer_email ?? row.email ?? ""),
     schoolLevel: payer?.schoolLevel ?? row.school_level,
     yearLevel: payer?.yearLevel ?? String(row.year_level ?? ""),
     strand: payer?.strand ?? row.strand ?? undefined,
@@ -434,10 +435,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       avatar: initials(attendeeNames[0]),
     };
     const inlineAttendees = Array.isArray(row.attendees) ? row.attendees.map((attendee: DbRow) => mapAttendee(attendee)) : undefined;
-    const payment = mapPayment(row, new Map([[payer.id, payer]]), new Map([[offering.id, offering]]), undefined, inlineAttendees);
+    const attendeePayers = new Map<string, Student>([[payer.id, payer]]);
+    inlineAttendees?.forEach((attendee, index) => {
+      const payerId = attendee.payerId ?? (index === 0 ? payer.id : undefined);
+      if (!payerId) return;
+      attendeePayers.set(payerId, {
+        id: payerId,
+        name: attendee.name,
+        email: input.email.trim(),
+        schoolLevel: input.schoolLevel,
+        yearLevel: input.yearLevel,
+        strand: input.strand,
+        course: input.course,
+        avatar: initials(attendee.name),
+      });
+    });
+    const payment = mapPayment(row, attendeePayers, new Map([[offering.id, offering]]), undefined, inlineAttendees);
     setData((current) => ({
       ...current,
-      students: [payer, ...current.students.filter((student) => student.id !== payer.id)],
+      students: [...attendeePayers.values(), ...current.students.filter((student) => !attendeePayers.has(student.id))],
       payments: [payment, ...current.payments.filter((item) => item.id !== payment.id)],
     }));
     return payment;
@@ -678,9 +694,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const proofPaths = offeringPayments
       .filter((payment) => payment.proofPath)
       .map((payment) => payment.proofPath as string);
-    const payerIds = new Set(offeringPayments.map((payment) => payment.studentId));
+    const payerIds = new Set(offeringPayments.flatMap((payment) => getPaymentPayerIds(payment)));
     const remainingPayments = data.payments.filter((payment) => payment.offeringId !== offeringId);
-    const remainingPayerIds = new Set(remainingPayments.map((payment) => payment.studentId));
+    const remainingPayerIds = new Set(remainingPayments.flatMap((payment) => getPaymentPayerIds(payment)));
 
     for (let offset = 0; offset < proofPaths.length; offset += 1000) {
       const { error: proofError } = await client.storage.from(paymentProofBucket).remove(proofPaths.slice(offset, offset + 1000));
@@ -718,8 +734,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deletePayerPermanently = async (payerId: string) => {
     const client = requireSupabase();
-    const proofPaths = data.payments
-      .filter((payment) => payment.studentId === payerId && payment.proofPath)
+    const linkedPayments = data.payments.filter((payment) => getPaymentPayerIds(payment).includes(payerId));
+    const linkedPayerIds = new Set(linkedPayments.flatMap((payment) => getPaymentPayerIds(payment)));
+    linkedPayerIds.add(payerId);
+    const proofPaths = linkedPayments
+      .filter((payment) => payment.proofPath)
       .map((payment) => payment.proofPath as string);
     for (let offset = 0; offset < proofPaths.length; offset += 1000) {
       const { error: proofError } = await client.storage.from("hs-payment-proofs").remove(proofPaths.slice(offset, offset + 1000));
@@ -732,8 +751,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setData((current) => ({
       ...current,
-      students: current.students.filter((student) => student.id !== payerId),
-      payments: current.payments.filter((payment) => payment.studentId !== payerId),
+      students: current.students.filter((student) => !linkedPayerIds.has(student.id)),
+      payments: current.payments.filter((payment) => !getPaymentPayerIds(payment).some((id) => linkedPayerIds.has(id))),
     }));
   };
 

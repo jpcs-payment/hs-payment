@@ -7,7 +7,7 @@ const submissionWindowMs = 10 * 60 * 1000;
 const maxEmailSubmissions = 5;
 const maxIpSubmissions = 20;
 const emailAlreadyUsedMessage = "email has been used";
-const duplicateEmailConstraint = "hs_payers_email_once_idx";
+const duplicateEmailConstraint = "hs_payments_email_once_idx";
 
 const config = () => ({
   supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),

@@ -1,4 +1,5 @@
 import type { AppData, PaymentRecord } from "../types";
+import { getPaymentPayerIds } from "../lib/payment";
 
 export const initialData: AppData = {
   students: [],
@@ -35,5 +36,5 @@ export const cloneInitialData = (): AppData =>
 
 export const getLatestPayment = (payments: PaymentRecord[], studentId: string) =>
   payments
-    .filter((payment) => payment.studentId === studentId)
+    .filter((payment) => getPaymentPayerIds(payment).includes(studentId))
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0];

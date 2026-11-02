@@ -8,7 +8,7 @@ import { AdminPageSkeleton, Avatar, Button, Input } from "./ui";
 import { OrganizationLogo } from "./OrganizationLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import { BRANDING } from "../lib/branding";
-import { getPaymentAttendees } from "../lib/payment";
+import { getPaymentAttendeeSummary, getPaymentAttendees } from "../lib/payment";
 
 interface NavItem {
   label: string;
@@ -69,7 +69,7 @@ export function AppShell() {
     const payments = data.payments
        .filter((payment) => `${payment.reference} ${payment.ticketId ?? ""} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => `${attendee.name} ${attendee.ticketId ?? ""}`).join(" ")} ${payment.email} ${payment.offeringName}`.toLowerCase().includes(query))
        .slice(0, 4)
-       .map((payment) => ({ label: payment.reference, detail: `${getPaymentAttendees(payment).map((attendee) => attendee.name).join(", ")} · ${formatCurrency(payment.amount)}`, to: "/admin/payments" }));
+       .map((payment) => ({ label: payment.reference, detail: `${getPaymentAttendeeSummary(payment)} · ${formatCurrency(payment.amount)}`, to: "/admin/payments" }));
     const offerings = data.offerings
       .filter((offering) => !offering.archivedAt && `${offering.name} ${offering.slug} ${offering.description}`.toLowerCase().includes(query))
       .slice(0, 4)

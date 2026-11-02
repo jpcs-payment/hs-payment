@@ -15,5 +15,17 @@ export const getPaymentAttendees = (payment: PaymentRecord): PaymentAttendee[] =
 export const getPaymentNames = (payment: PaymentRecord) =>
   getPaymentAttendees(payment).map((attendee) => attendee.name);
 
+export const getPaymentAttendeeSummary = (payment: PaymentRecord) => {
+  const names = getPaymentNames(payment);
+  if (names.length <= 1) return names[0] ?? "Unnamed attendee";
+  return `${names[0]}, and ${names.length - 1} others`;
+};
+
+export const getPaymentPayerIds = (payment: PaymentRecord) =>
+  Array.from(new Set([
+    payment.studentId,
+    ...getPaymentAttendees(payment).map((attendee) => attendee.payerId).filter((payerId): payerId is string => Boolean(payerId)),
+  ]));
+
 export const getFirstPaymentAttendee = (payment: PaymentRecord) =>
   getPaymentAttendees(payment)[0];
