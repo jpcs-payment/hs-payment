@@ -1,15 +1,16 @@
 import QRCode from "qrcode";
 import jpcsLogo from "../../jpcslogo/cropped_circle_image.png";
 
-const canvasSize = 1024;
+const canvasWidth = 900;
+const canvasHeight = 1000;
 const qrSize = 760;
-const qrLeft = Math.round((canvasSize - qrSize) / 2);
+const qrLeft = Math.round((canvasWidth - qrSize) / 2);
 const qrTop = 218;
 const logoSize = 154;
 const logoBackdropSize = 178;
-const logoLeft = Math.round((canvasSize - logoSize) / 2);
+const logoLeft = Math.round((canvasWidth - logoSize) / 2);
 const logoTop = qrTop + Math.round(qrSize / 2) - Math.round(logoSize / 2) - 12;
-const logoBackdropLeft = Math.round((canvasSize - logoBackdropSize) / 2);
+const logoBackdropLeft = Math.round((canvasWidth - logoBackdropSize) / 2);
 const logoBackdropTop = qrTop + Math.round(qrSize / 2) - Math.round(logoBackdropSize / 2) - 12;
 
 export const createQrDataUrl = (value: string) =>
@@ -46,24 +47,24 @@ export const createBrandedQrDataUrl = async (value: string, name: string, ticket
   ]);
   const qr = await loadImage(qrDataUrl);
   const canvas = document.createElement("canvas");
-  canvas.width = canvasSize;
-  canvas.height = canvasSize;
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("The QR canvas could not be created.");
   context.fillStyle = "#ffffff";
-  context.fillRect(0, 0, canvasSize, canvasSize);
+  context.fillRect(0, 0, canvasWidth, canvasHeight);
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillStyle = "#0B1F3A";
-  context.font = `600 ${nameFontSize(displayName)}px Arial, Helvetica, sans-serif`;
-  context.fillText(displayName.toUpperCase() || "ATTENDEE", canvasSize / 2, 76);
-  context.font = "400 30px Arial, Helvetica, sans-serif";
-  context.fillText(displayTicket || "TICKET", canvasSize / 2, 126);
+  context.font = `600 ${nameFontSize(displayName)}px "Geist Variable", Arial, Helvetica, sans-serif`;
+  context.fillText(displayName.toUpperCase() || "ATTENDEE", canvasWidth / 2, 76);
+  context.font = '400 30px "Geist Variable", Arial, Helvetica, sans-serif';
+  context.fillText(displayTicket || "TICKET", canvasWidth / 2, 126);
   context.imageSmoothingEnabled = false;
   context.drawImage(qr, qrLeft, qrTop, qrSize, qrSize);
   context.imageSmoothingEnabled = true;
   context.beginPath();
-  context.arc(canvasSize / 2, logoBackdropTop + logoBackdropSize / 2, logoBackdropSize / 2 - 3, 0, Math.PI * 2);
+  context.arc(canvasWidth / 2, logoBackdropTop + logoBackdropSize / 2, logoBackdropSize / 2 - 3, 0, Math.PI * 2);
   context.fillStyle = "#ffffff";
   context.fill();
   context.lineWidth = 5;
