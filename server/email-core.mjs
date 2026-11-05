@@ -59,8 +59,8 @@ const attendeesFor = (payment) => Array.isArray(payment?.attendees) && payment.a
   ? payment.attendees
   : [{ name: payment?.studentName, position: 1, ticketId: payment?.ticketId, ticketQrValue: payment?.ticketQrValue }];
 const attendeeNames = (payment) => attendeesFor(payment).map((attendee) => String(attendee.name ?? "").trim()).filter(Boolean);
-const attendeeListHtml = (payment) => attendeesFor(payment).map((attendee, index) => `<li style="margin:0 0 7px;color:#0b1f3a"><strong>${escapeHtml(attendee.name)}</strong><span style="color:#7a8799"> · Ticket ${escapeHtml(attendee.ticketId ?? `#${index + 1}`)}</span></li>`).join("");
-const attendeeListText = (payment) => attendeesFor(payment).map((attendee, index) => `${index + 1}. ${attendee.name} · Ticket ${attendee.ticketId ?? "-"}`).join("\n");
+const attendeeListHtml = (payment) => attendeesFor(payment).map((attendee, index) => `<li style="margin:0 0 7px;color:#0b1f3a"><strong>${escapeHtml(attendee.name)}</strong>${payment.generateQr !== false ? `<span style="color:#7a8799"> · Ticket ${escapeHtml(attendee.ticketId ?? `#${index + 1}`)}</span>` : ""}</li>`).join("");
+const attendeeListText = (payment) => attendeesFor(payment).map((attendee, index) => `${index + 1}. ${attendee.name}${payment.generateQr !== false ? ` · Ticket ${attendee.ticketId ?? "-"}` : ""}`).join("\n");
 const attachmentBaseName = (name, index) => {
   const normalized = String(name ?? "")
     .normalize("NFKD")
@@ -72,19 +72,29 @@ const attachmentBaseName = (name, index) => {
 };
 const field = (label, value) => `<td style="width:50%;padding:9px 10px;border:1px solid #d9e2ef;border-radius:10px;vertical-align:top;overflow-wrap:anywhere;word-break:break-word"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7a8799;font-weight:700">${escapeHtml(label)}</div><div style="margin-top:5px;color:#0b1f3a;font-size:13px;font-weight:700;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(value)}</div></td>`;
 
-const createHtml = (payment, payLater) => {
+const createHtmlContent = (payment, payLater) => {
   const firstName = attendeeNames(payment)[0]?.split(/\s+/)[0] ?? "there";
   const names = attendeeNames(payment);
   const statusTitle = payLater ? "Payment reserved" : "Payment confirmed";
   const subtitle = payLater ? "Your Pay Later reservation is ready." : "Junior Philippines Computer Studies";
   const intro = payLater
     ? `Your reservation for <strong style="color:#0b1f3a">${escapeHtml(payment.offeringName)}</strong> is <strong style="color:#b66a00">Not Paid Yet</strong>. Pay using ${escapeHtml(payment.method)} before the deadline, then keep this email for event entry.`
-    : `Your payment for <strong style="color:#0b1f3a">${escapeHtml(payment.offeringName)}</strong> has been confirmed. Keep this email and the attached QR code for event check-in.`;
+    : `Your payment for <strong style="color:#0b1f3a">${escapeHtml(payment.offeringName)}</strong> has been confirmed. ${payment.generateQr !== false ? "Keep this email and the attached QR code for event check-in." : "Keep this email for your payment confirmation."}`;
   const rows = payLater
     ? `<tr>${field("Reference", payment.reference)}${field("Total", formatCurrency(Number(payment.amount)))}</tr><tr>${field("Names", `${names.length} attendee${names.length === 1 ? "" : "s"}`)}${field("Method", payment.method)}</tr><tr>${field("School details", paymentDetails(payment))}${field("Deadline", formatDateTime(payment.paymentDeadlineAt))}</tr><tr>${field("Status", "Not Paid Yet")}${field("Price per name", formatCurrency(Number(payment.amount) / names.length))}</tr>`
     : `<tr>${field("Reference", payment.reference)}${field("Receipt", payment.receiptNumber)}</tr><tr>${field("Total", formatCurrency(Number(payment.amount)))}${field("Method", payment.method)}</tr><tr>${field("Names", `${names.length} attendee${names.length === 1 ? "" : "s"}`)}${field("School details", paymentDetails(payment))}</tr><tr>${field("Confirmed", formatDateTime(payment.approvedAt))}${field("Allocations", allocationDetails(payment))}</tr>`;
-  const qrNote = payLater ? "A separate QR is attached for each attendee. The payment remains Not Paid Yet until it is collected and recorded by an admin." : "A separate QR is attached for each attendee. Download the matching PNG before attending.";
+  const qrNote = payment.generateQr !== false
+    ? payLater ? "A separate QR is attached for each attendee. The payment remains Not Paid Yet until it is collected and recorded by an admin." : "A separate QR is attached for each attendee. Download the matching PNG before attending."
+    : "Attendance QR generation is disabled for this payment type. This email contains the payment details and attendee list.";
   return `<!doctype html><html lang="en"><body style="margin:0;background:#f4f7fb;color:#17243a;font-family:Arial,sans-serif"><div style="max-width:640px;margin:0 auto;padding:28px 16px"><div style="overflow:hidden;border:1px solid #d9e2ef;border-radius:18px;background:#ffffff"><div style="padding:24px;background:#0b1f3a;color:#ffffff"><div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#bfd4ed;font-weight:700">JPCS - LCC Payment Portal</div><div style="margin-top:8px;font-size:24px;font-weight:800">${statusTitle}</div><div style="margin-top:7px;font-size:13px;color:#d8e7f7">${subtitle}</div></div><div style="padding:28px 24px"><p style="margin:0;font-size:16px;font-weight:700;color:#0b1f3a">Hi ${escapeHtml(firstName)},</p><p style="margin:14px 0 0;font-size:14px;line-height:1.7;color:#60708a">${intro}</p><table role="presentation" style="width:100%;margin:22px 0 0;border-spacing:7px;table-layout:fixed">${rows}</table><div style="margin-top:20px;padding:16px;border:1px solid #d9e2ef;border-radius:16px;background:#f4f7fb"><div style="font-size:14px;font-weight:800;color:#0b1f3a">Attendees and tickets</div><ul style="margin:12px 0 0;padding-left:20px;font-size:13px;line-height:1.6">${attendeeListHtml(payment)}</ul></div><div style="margin:18px auto 0;max-width:360px;padding:18px;text-align:center;border:1px solid #d9e2ef;border-radius:16px;background:#f4f7fb"><div style="font-size:14px;font-weight:800;color:#0b1f3a">Attendance QR list included</div><div style="margin-top:8px;font-size:11px;line-height:1.6;color:#7a8799">${qrNote}</div></div></div><div style="padding:18px 24px;border-top:1px solid #d9e2ef;background:#f4f7fb;font-size:11px;line-height:1.6;color:#7a8799">JPCS - LCC · Junior Philippines Computer Studies · ${payLater ? "Keep this email and pay before the deadline." : "Payment confirmation"}</div></div></div></body></html>`;
+};
+
+const createHtml = (payment, payLater) => {
+  const hasQr = payment.generateQr !== false;
+  return createHtmlContent(payment, payLater)
+    .replace("Attendees and tickets", hasQr ? "Attendees and tickets" : "Attendees")
+    .replace("Attendance QR list included", hasQr ? "Attendance QR list included" : "Attendance details")
+    .replace("then keep this email for event entry.", hasQr ? "then keep this email for event entry." : "then keep this email.");
 };
 
 const createText = (payment, payLater) => [
@@ -99,10 +109,10 @@ const createText = (payment, payLater) => [
   `Method: ${payment.method}`,
   ...(payLater ? [`Deadline: ${formatDateTime(payment.paymentDeadlineAt)}`, "Status: Not Paid Yet"] : [`Receipt: ${payment.receiptNumber}`, `School details: ${paymentDetails(payment)}`, `Allocations: ${allocationDetails(payment)}`, `Confirmed: ${formatDateTime(payment.approvedAt)}`]),
   "",
-  "Attendees and tickets:",
+  payment.generateQr !== false ? "Attendees and tickets:" : "Attendees:",
   attendeeListText(payment),
   "",
-  payLater ? "The attendance QR is attached and can be used for event entry. Your payment remains Not Paid Yet until it is collected and recorded by an admin." : "The attendance QR code is attached to this email.",
+  payment.generateQr !== false ? payLater ? "The attendance QR is attached and can be used for event entry. Your payment remains Not Paid Yet until it is collected and recorded by an admin." : "The attendance QR code is attached to this email." : "Attendance QR generation is disabled for this payment type.",
 ].join("\n");
 
 const validatePayment = (payment, payLater) => {
@@ -113,7 +123,8 @@ const validatePayment = (payment, payLater) => {
   if (!isEmail(payment.email.trim())) return "The recipient email is invalid.";
   if (!Number.isFinite(Number(payment.amount)) || Number(payment.amount) <= 0) return "The payment amount is invalid.";
   const attendees = attendeesFor(payment);
-  if (!attendees.length || attendees.some((attendee) => typeof attendee.name !== "string" || !attendee.name.trim() || typeof attendee.ticketId !== "string" || !attendee.ticketId.trim() || typeof attendee.ticketQrValue !== "string" || attendee.ticketQrValue !== `${QR_PREFIX}${attendee.ticketId}`)) return payLater ? "The attendance QR list is incomplete." : "The ticket QR list is incomplete.";
+  if (!attendees.length || attendees.some((attendee) => typeof attendee.name !== "string" || !attendee.name.trim())) return "The attendee list is incomplete.";
+  if (payment.generateQr !== false && attendees.some((attendee) => typeof attendee.ticketId !== "string" || !attendee.ticketId.trim() || typeof attendee.ticketQrValue !== "string" || attendee.ticketQrValue !== `${QR_PREFIX}${attendee.ticketId}`)) return payLater ? "The attendance QR list is incomplete." : "The ticket QR list is incomplete.";
   if (payLater && (!payment.paymentDeadlineAt || Number.isNaN(new Date(payment.paymentDeadlineAt).getTime()))) return "The Pay Later deadline is invalid.";
   return null;
 };
@@ -179,6 +190,7 @@ const verifyPaymentRecord = async (payment, payLater) => {
     email: String(payer.email),
     offeringName: String(storedPayment.offering_name),
     amount: Number(storedPayment.amount),
+    generateQr: storedPayment.generate_qr !== false,
     reference: String(storedPayment.reference),
     method: storedPayment.method,
     allocations: storedPayment.allocations,
@@ -273,7 +285,7 @@ const sendEmail = async (payment, payLater, { verify = false, requireAdmin = fal
   if (!apiKey || !isEmail(from)) return { status: 503, body: { error: "Brevo is not configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL in the deployment environment." } };
 
   const usedAttachmentNames = new Set();
-  const qrAttachments = await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
+  const qrAttachments = deliveryPayment.generateQr === false ? [] : await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
     const qrBuffer = await QRCode.toBuffer(attendee.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
     const baseName = attachmentBaseName(attendee.name, index);
     let fileName = baseName;

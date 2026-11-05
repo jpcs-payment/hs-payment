@@ -27,6 +27,13 @@ export const initialData: AppData = {
       instructions: "Send the exact amount, then upload your payment screenshot and enter the sender reference.",
     },
   ],
+  siteSettings: {
+    siteKey: "public-payment",
+    isOpen: true,
+    message: "The payment portal is temporarily closed while we update it. Please check back soon.",
+    allowMultipleNames: false,
+    maxNames: 10,
+  },
   payments: [],
   developers: [],
 };

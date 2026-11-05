@@ -28,6 +28,52 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+.logo-marquee {
+  overflow: hidden;
+  border-top: 1px solid #d9e2ef;
+  border-bottom: 1px solid #d9e2ef;
+  background: #ffffff;
+}
+
+.logo-marquee-viewport {
+  width: 100%;
+  overflow: hidden;
+}
+
+.logo-marquee-track {
+  display: flex;
+  width: 200%;
+  animation: logo-marquee 36s linear infinite;
+  will-change: transform;
+}
+
+.logo-marquee-set {
+  display: flex;
+  width: 50%;
+  flex: 0 0 50%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.5rem 0;
+}
+
+.logo-marquee-item {
+  display: flex;
+  min-width: 0;
+  height: 40px;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-marquee-item img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: 40px;
+  object-fit: contain;
+}
+
 .payment-form .flex-nowrap {
   flex-wrap: wrap;
 }
@@ -38,6 +84,14 @@ body {
 
 .payment-form nav[aria-label="Payment progress"] ol {
   width: 100%;
+}
+
+.payment-form nav[aria-label="Payment progress"] > div:first-child {
+  justify-content: flex-end;
+}
+
+.payment-form nav[aria-label="Payment progress"] > div:first-child > p {
+  display: none;
 }
 
 @media (max-width: 639px) {
@@ -102,7 +156,7 @@ body {
     min-width: 0.25rem;
   }
 
-  .payment-form .payment-method-section > .grid {
+  .payment-form .payment-step-section > .grid[class*="sm:grid-cols-3"] {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.5rem;
   }
@@ -195,6 +249,15 @@ button {
   }
 }
 
+@keyframes logo-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
 @keyframes dialog-backdrop {
   from {
     opacity: 0;
@@ -235,6 +298,37 @@ button {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .logo-marquee-track {
+    width: 100%;
+    animation: none;
+    transform: none;
+  }
+
+  .logo-marquee-set {
+    width: 100%;
+    flex-basis: 100%;
+  }
+
+  .logo-marquee-set[aria-hidden="true"] {
+    display: none;
+  }
+}
+
+@media (max-width: 1023px) {
+  .logo-marquee-track {
+    animation-duration: 32s;
+  }
+
+  .logo-marquee-set {
+    gap: 0.5rem;
+    padding: 0.4rem 0;
+  }
+
+  .logo-marquee-item,
+  .logo-marquee-item img {
+    height: 32px;
   }
 }
 

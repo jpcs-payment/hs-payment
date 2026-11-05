@@ -12,12 +12,38 @@ import type { PaymentMethodConfig } from "../../types";
 const methods = ["Cash", "GCash", "MariBank"] as const;
 
 export function PaymentMethodsPage() {
-  const { data, savePaymentMethod } = useApp();
+  const { data, savePaymentMethod, savePublicSiteSettings } = useApp();
   const { pushToast } = useToast();
   const [methodDraft, setMethodDraft] = useState<PaymentMethodConfig | null>(null);
   const [loading, setLoading] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [maxNamesDraft, setMaxNamesDraft] = useState(data.siteSettings.maxNames);
   const activeTypes = data.offerings.filter((item) => item.active && !item.archivedAt);
   const type = activeTypes[0];
+
+  const updatePortalSettings = async (nextSettings: typeof data.siteSettings, message: string) => {
+    setSettingsLoading(true);
+    try {
+      await savePublicSiteSettings(nextSettings);
+      pushToast({ tone: "success", title: "Public settings saved", message });
+    } catch (error) {
+      pushToast({ tone: "error", title: "Could not save public settings", message: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setSettingsLoading(false);
+    }
+  };
+
+  const toggleSiteOpen = () => void updatePortalSettings({ ...data.siteSettings, isOpen: !data.siteSettings.isOpen }, data.siteSettings.isOpen ? "The payment form is now closed for updates." : "The payment form is now open for submissions.");
+  const toggleMultipleNames = () => void updatePortalSettings({ ...data.siteSettings, allowMultipleNames: !data.siteSettings.allowMultipleNames }, data.siteSettings.allowMultipleNames ? "The public form will accept one attendee name." : "The public form can accept multiple attendee names.");
+  const saveMaxNames = () => {
+    const maxNames = Number(maxNamesDraft);
+    if (!Number.isInteger(maxNames) || maxNames < 2 || maxNames > 10) {
+      pushToast({ tone: "error", title: "Invalid name limit", message: "Choose a whole number from 2 to 10." });
+      setMaxNamesDraft(data.siteSettings.maxNames);
+      return;
+    }
+    if (maxNames !== data.siteSettings.maxNames) void updatePortalSettings({ ...data.siteSettings, maxNames }, "The global attendee-name limit was updated.");
+  };
 
   const toggleMethod = async (method: PaymentMethodConfig) => {
     try {
@@ -58,8 +84,22 @@ export function PaymentMethodsPage() {
          <div className="flex flex-wrap gap-2">
            <Button size="sm" variant="outline" onClick={exportMethods} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export CSV</Button>
            <Button size="sm" variant="outline" onClick={exportMethodsPdf} disabled={!data.paymentMethods.length}><Download className="h-3.5 w-3.5" /> Export PDF</Button>
-         </div>
+        </div>
       </div>
+      <Card className="p-5 sm:p-6">
+        <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Public portal controls</p>
+            <h3 className="mt-2 text-lg font-extrabold text-navy-900">Submission settings</h3>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-500">Keep the public page visible while closing submissions during updates. Multiple attendee names are controlled globally here.</p>
+          </div>
+          <button type="button" disabled={settingsLoading} className={`flex min-h-11 w-full shrink-0 items-center justify-between gap-4 rounded-xl border px-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 lg:w-64 ${data.siteSettings.isOpen ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`} onClick={toggleSiteOpen}><span>{data.siteSettings.isOpen ? "Open to submissions" : "Closed for updates"}</span>{data.siteSettings.isOpen ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button>
+        </div>
+        <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
+          <div><FieldLabel>Multiple attendee names</FieldLabel><button type="button" disabled={settingsLoading} className={`flex min-h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${data.siteSettings.allowMultipleNames ? "border-navy-700 bg-navy-900 text-white" : "border-line bg-white text-slate-500"}`} onClick={toggleMultipleNames}><span>{data.siteSettings.allowMultipleNames ? "Enabled globally" : "Disabled globally"}</span>{data.siteSettings.allowMultipleNames ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
+          <div><FieldLabel required>Maximum names</FieldLabel><Input type="number" min="2" max="10" step="1" value={maxNamesDraft} onChange={(event) => setMaxNamesDraft(Number(event.target.value))} onBlur={saveMaxNames} disabled={settingsLoading || !data.siteSettings.allowMultipleNames} /><p className="mt-1.5 text-[11px] text-slate-400">Used when multiple names are enabled.</p></div>
+        </div>
+      </Card>
       <Card className="overflow-hidden">
         <div className="flex flex-col justify-between gap-3 border-b border-line bg-navy-900 px-5 py-5 text-white sm:flex-row sm:items-center sm:px-6">
           <div><h3 className="text-xl font-extrabold">{activeTypes.length ? `${activeTypes.length} active type${activeTypes.length === 1 ? "" : "s"}` : "No active types"}</h3><p className="mt-1 text-xs text-blue-100/70">{type?.name ?? "Add a payment type first."}</p></div>

@@ -34,7 +34,7 @@ The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BRE
 
 ## Supabase
 
-The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, and one payer record per attendee while preserving one payment per email. Apply them in filename order, including `20261102000000_multiple_attendees.sql` and `20261102010000_attendee_payers.sql`.
+The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, one payer record per attendee, and global public-portal controls with per-payment-type QR generation while preserving one payment per email. Apply them in filename order, including `20261102000000_multiple_attendees.sql`, `20261102010000_attendee_payers.sql`, and `20261105000000_portal_settings_and_qr.sql`.
 
 After authenticating the Supabase CLI with access to the target project:
 
@@ -43,7 +43,7 @@ supabase link --project-ref fjulkxdhdskftnkwmsyz
 supabase db push
 ```
 
-Do not rerun the initial migration manually after the database has data. The follow-up migrations are forward-only; the multiple-attendee migration backfills one attendee row for each existing payment and preserves legacy parent ticket fields, while the attendee-payer migration backfills missing payer rows, adds payer rows for new attendees, and moves the one-email uniqueness check to the payment record.
+Do not rerun the initial migration manually after the database has data. The follow-up migrations are forward-only; the multiple-attendee migration backfills one attendee row for each existing payment and preserves legacy parent ticket fields, while the attendee-payer migration backfills missing payer rows, adds payer rows for new attendees, and moves the one-email uniqueness check to the payment record. The portal-settings migration initializes the public portal as open and synchronizes the global attendee-name policy to all payment types.
 
 If the linked project reports remote migrations such as `001`-`004` instead of these repository timestamps, stop before `supabase db push` and reconcile the migration history/schema in the Supabase SQL Editor first.
 

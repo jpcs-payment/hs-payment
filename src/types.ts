@@ -38,6 +38,14 @@ export interface PaymentMethodConfig {
   qrImage?: string;
 }
 
+export interface PublicSiteSettings {
+  siteKey: string;
+  isOpen: boolean;
+  message: string;
+  allowMultipleNames: boolean;
+  maxNames: number;
+}
+
 export interface PaymentAttendee {
   id: string;
   name: string;
@@ -55,6 +63,7 @@ export interface PaymentOffering {
   description: string;
   amount: number;
   active: boolean;
+  generateQr: boolean;
   allowMultipleNames: boolean;
   maxNames: number;
   availableMethods: PaymentMethod[];
@@ -80,6 +89,7 @@ export interface PaymentRecord {
   offeringId: string;
   offeringName: string;
   amount: number;
+  generateQr: boolean;
   attendeeCount: number;
   attendees: PaymentAttendee[];
   allocations: PaymentAllocation[];
@@ -123,6 +133,7 @@ export interface AppData {
   students: Student[];
   offerings: PaymentOffering[];
   paymentMethods: PaymentMethodConfig[];
+  siteSettings: PublicSiteSettings;
   payments: PaymentRecord[];
   developers: Developer[];
 }
@@ -162,6 +173,7 @@ export interface NewPaymentOfferingInput {
   description: string;
   amount: number;
   active: boolean;
+  generateQr: boolean;
   allowMultipleNames: boolean;
   maxNames: number;
   availableMethods: PaymentMethod[];

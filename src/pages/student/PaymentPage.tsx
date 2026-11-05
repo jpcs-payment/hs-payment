@@ -10,7 +10,7 @@ import { getPaymentAttendees } from "../../lib/payment";
 import type { PaymentMethod, PaymentMode, PaymentOffering, PaymentRecord, SchoolLevel } from "../../types";
 import jpcsLogo from "../../../jpcslogo/cropped_circle_image.png";
 
-interface PaymentFormState {
+export interface PaymentFormState {
   email: string;
   attendeeNames: string[];
   schoolLevel: SchoolLevel;
@@ -25,22 +25,22 @@ interface PaymentFormState {
   proofImage: string;
 }
 
-type FormErrors = Partial<Record<keyof PaymentFormState, string>>;
+export type FormErrors = Partial<Record<keyof PaymentFormState, string>>;
 type PaymentStep = "details" | "type" | "method" | "review" | "paid";
 
 const juniorYears = ["Grade 7", "Grade 8", "Grade 9", "Grade 10"];
 const seniorYears = ["Grade 11", "Grade 12"];
 const collegeYears = ["Year 1", "Year 2", "Year 3", "Year 4", "Year 5"];
-const strands = ["STEM", "ABM", "HUMSS", "GAS", "TVL"];
+const strands = ["ABM", "GAS", "HUMSS", "STEM", "HE", "ICT"];
 const courseSuggestions = ["BS Computer Science", "BS Information Technology", "BS Information Systems", "BS Computer Engineering", "BS Business Administration", "BS Accountancy", "BS Education", "BS Psychology", "BS Hospitality Management", "BS Tourism Management"];
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const stepOrder: PaymentStep[] = ["details", "type", "method", "review", "paid"];
 const stepLabels: Record<PaymentStep, string> = {
-  details: "01 · STUDENT DETAILS",
-  type: "02 · PAYMENT TYPE",
-  method: "03 · PAYMENT METHOD",
-  review: "04 · REVIEW PAYMENT",
-  paid: "05 · PAID",
+  details: "STUDENT DETAILS",
+  type: "PAYMENT TYPE",
+  method: "PAYMENT METHOD",
+  review: "REVIEW PAYMENT",
+  paid: "PAID",
 };
 
 const yearsFor = (level: SchoolLevel) => level === "Senior High School" ? seniorYears : level === "College" ? collegeYears : juniorYears;
@@ -82,7 +82,8 @@ export function PaymentPage() {
   const isCashless = form.method === "GCash" || form.method === "MariBank";
   const payLaterAvailable = Boolean(form.method && selectedOffering?.payLaterMethods.includes(form.method));
   const currentStepIndex = stepOrder.indexOf(step);
-  const maxNames = selectedOffering?.allowMultipleNames ? selectedOffering.maxNames : 1;
+  const allowMultipleNames = data.siteSettings.allowMultipleNames;
+  const maxNames = allowMultipleNames ? Math.min(10, Math.max(2, data.siteSettings.maxNames)) : 1;
   const attendeeCount = form.attendeeNames.filter((name) => name.trim()).length;
   const totalAmount = selectedOffering ? selectedOffering.amount * Math.max(attendeeCount, 1) : 0;
 
@@ -93,17 +94,18 @@ export function PaymentPage() {
     const offeringChanged = nextOfferingId !== form.offeringId;
     const methodChanged = nextMethod !== form.method;
     const modeChanged = nextMode !== form.paymentMode;
-    if (!offeringChanged && !methodChanged && !modeChanged) return;
+    const namesNeedTrim = form.attendeeNames.length > maxNames;
+    if (!offeringChanged && !methodChanged && !modeChanged && !namesNeedTrim) return;
     setForm((current) => ({
       ...current,
       offeringId: nextOfferingId,
       method: nextMethod,
       paymentMode: nextMode,
-      attendeeNames: !selectedOffering?.allowMultipleNames && current.attendeeNames.length > 1 ? [current.attendeeNames[0]] : current.attendeeNames.slice(0, selectedOffering?.allowMultipleNames ? selectedOffering.maxNames : 1),
+      attendeeNames: current.attendeeNames.slice(0, maxNames),
       ...(offeringChanged || methodChanged || modeChanged ? { senderAccountName: "", senderReference: "", proofImage: "" } : {}),
     }));
     if (offeringChanged || methodChanged || modeChanged) setErrors((current) => ({ ...current, offeringId: undefined, method: undefined, paymentMode: undefined, senderAccountName: undefined, senderReference: undefined, proofImage: undefined }));
-  }, [availableMethods, eligibleOfferings, form.method, form.offeringId, form.paymentMode, selectedOffering]);
+  }, [availableMethods, eligibleOfferings, form.attendeeNames.length, form.method, form.offeringId, form.paymentMode, maxNames, selectedOffering]);
 
   useEffect(() => {
     if (!yearOptions.includes(form.yearLevel)) setForm((current) => ({ ...current, yearLevel: yearOptions[0] }));
@@ -124,7 +126,7 @@ export function PaymentPage() {
 
   const addAttendeeName = () => {
     if (form.attendeeNames.length >= maxNames) {
-      setErrors((current) => ({ ...current, attendeeNames: `This payment type allows up to ${maxNames} name${maxNames === 1 ? "" : "s"}.` }));
+      setErrors((current) => ({ ...current, attendeeNames: `The payment portal allows up to ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.` }));
       return;
     }
     setForm((current) => ({ ...current, attendeeNames: [...current.attendeeNames, ""] }));
@@ -162,7 +164,7 @@ export function PaymentPage() {
     if (!form.email.trim() || !/^\S+@\S+\.\S+$/.test(form.email)) nextErrors.email = "Enter a valid email address.";
     if (names.some((name) => !name)) nextErrors.attendeeNames = "Enter a name for every attendee row.";
     else if (new Set(names.map((name) => name.toLowerCase())).size !== names.length) nextErrors.attendeeNames = "Each attendee name must be unique.";
-    else if (names.length > maxNames) nextErrors.attendeeNames = `This payment type allows up to ${maxNames} name${maxNames === 1 ? "" : "s"}.`;
+    else if (names.length > maxNames) nextErrors.attendeeNames = `The payment portal allows up to ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`;
     if (!form.yearLevel) nextErrors.yearLevel = "Choose a year level.";
     if (form.schoolLevel === "Senior High School" && !form.strand) nextErrors.strand = "Choose a strand.";
     if (form.schoolLevel === "College" && !form.course.trim()) nextErrors.course = "Enter your course or program.";
@@ -251,7 +253,7 @@ export function PaymentPage() {
         try {
           const emailedPayment = await sendPayLaterEmail(payment);
           if (emailedPayment) setSubmittedPayment(emailedPayment);
-          pushToast({ tone: "success", title: "Reservation submitted", message: `Not Paid Yet. The attendee QR list was emailed to ${payment.email}.` });
+          pushToast({ tone: "success", title: "Reservation submitted", message: payment.generateQr ? `Not Paid Yet. The attendee QR list was emailed to ${payment.email}.` : `Not Paid Yet. The confirmation was emailed to ${payment.email}.` });
         } catch (error) {
           const message = error instanceof Error ? error.message : "The reservation was saved, but the email could not be sent.";
           setSubmittedPayment({ ...payment, emailDeliveryStatus: "Failed", emailDeliveryError: message });
@@ -294,6 +296,7 @@ export function PaymentPage() {
   };
 
   const summarySchoolDetails = `${form.schoolLevel} · ${form.yearLevel}${form.strand ? ` · ${form.strand}` : ""}${form.course ? ` · ${form.course}` : ""}`;
+  const siteClosed = !data.siteSettings.isOpen;
 
   if (dataLoading) return <PaymentPageSkeleton />;
   if (dataError) return <Card className="mx-auto max-w-xl p-8 text-center"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-coral">Payment portal unavailable</p><h3 className="mt-2 text-base font-extrabold text-navy-900">The payment setup could not load</h3><p className="mt-2 break-words text-sm leading-6 text-slate-500">{dataError}</p><Button className="mt-5" variant="outline" onClick={() => void retryData()}>Retry</Button></Card>;
@@ -301,15 +304,15 @@ export function PaymentPage() {
   return (
     <div className="payment-form mx-auto min-w-0 max-w-[1180px] space-y-6 overflow-x-hidden">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-        <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">JPCS payment portal</p><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Complete your payment</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Add each attendee once, then submit one payment using the email that should receive the QR list.</p></div>
+        <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-400">JPCS payment portal</p><h2 className="mt-3 text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Complete your payment</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Add each attendee once, then submit one payment using the email that should receive the confirmation.</p></div>
       </div>
 
       <StepIndicator currentStep={step} />
 
-      {!activeOfferings.length ? <Card className="p-8 text-center"><h3 className="text-base font-extrabold text-navy-900">No payment types are available</h3><p className="mt-2 text-sm text-slate-500">Please check back after the JPCS admin publishes a payment type.</p></Card> : step === "paid" && submittedPayment ? <PaymentCompleteContent payment={submittedPayment} onNewPayment={resetForm} /> : <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+       {siteClosed ? <SiteClosedCard message={data.siteSettings.message} /> : !activeOfferings.length ? <Card className="p-8 text-center"><h3 className="text-base font-extrabold text-navy-900">No payment types are available</h3><p className="mt-2 text-sm text-slate-500">Please check back after the JPCS admin publishes a payment type.</p></Card> : step === "paid" && submittedPayment ? <PaymentCompleteContent payment={submittedPayment} onNewPayment={resetForm} /> : <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form onSubmit={handleSubmit} className="min-w-0 space-y-6">
           <Card className="animate-fade-up p-5 sm:p-7">
-            {step === "details" ? <StudentDetailsStep form={form} errors={errors} yearOptions={yearOptions} maxNames={maxNames} allowMultipleNames={Boolean(selectedOffering?.allowMultipleNames)} onChange={updateForm} onNameChange={updateAttendeeName} onAddName={addAttendeeName} onRemoveName={removeAttendeeName} onSchoolLevelChange={changeSchoolLevel} /> : null}
+            {step === "details" ? <CompactStudentDetailsStep form={form} errors={errors} yearOptions={yearOptions} maxNames={maxNames} allowMultipleNames={allowMultipleNames} onChange={updateForm} onNameChange={updateAttendeeName} onAddName={addAttendeeName} onRemoveName={removeAttendeeName} onSchoolLevelChange={changeSchoolLevel} /> : null}
             {step === "type" ? <PaymentTypeStep offerings={eligibleOfferings} selectedOffering={selectedOffering} schoolLevel={form.schoolLevel} error={errors.offeringId} onSelect={(offeringId) => updateForm("offeringId", offeringId)} /> : null}
             {step === "method" ? <PaymentMethodStep form={form} availableMethods={availableMethods} method={form.method} methodConfig={methodConfig} paymentMode={form.paymentMode} selectedOffering={selectedOffering} totalAmount={totalAmount} attendeeCount={Math.max(attendeeCount, 1)} isPayLater={isPayLater} isCashless={isCashless} errors={errors} proofImage={form.proofImage} onMethodChange={changeMethod} onModeChange={(mode) => updateForm("paymentMode", mode)} onChange={updateForm} onProofUpload={handleProofUpload} onProofClear={() => updateForm("proofImage", "")} /> : null}
             {step === "review" ? <ReviewPaymentStep form={form} selectedOffering={selectedOffering} totalAmount={totalAmount} isPayLater={isPayLater} summarySchoolDetails={summarySchoolDetails} submissionTime={submissionTime} /> : null}
@@ -319,7 +322,7 @@ export function PaymentPage() {
             <Button className="w-full sm:w-auto" type="submit" size="lg" loading={submitting} disabled={step === "review" ? submitting : !availableMethods.length || !selectedOffering}>{step === "review" ? "Confirm and submit" : "Next"}<ArrowRight className="h-4 w-4" /></Button>
           </div>
         </form>
-        <aside className="hidden space-y-6 lg:sticky lg:top-24 lg:block lg:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(totalAmount)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Names" value={`${Math.max(attendeeCount, 1)} attendee${Math.max(attendeeCount, 1) === 1 ? "" : "s"}`} /><SummaryLine label="Email" value={form.email || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><Check className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">05 · PAID</p><p className="mt-1 text-[10px] text-slate-400">After approval</p></div></div><p className="mt-4 text-xs leading-5 text-slate-500">Your receipt and one QR ticket per attendee are available after approval.</p></Card></aside>
+        <aside className="hidden space-y-6 lg:sticky lg:top-24 lg:block lg:self-start"><Card className="overflow-hidden animate-fade-up"><div className="bg-navy-900 px-5 py-5 text-white"><div className="flex items-center justify-between"><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-blue-100/60">Payment summary</p><CalendarClock className="h-4 w-4 text-blue-200" /></div><p className="mt-3 text-2xl font-extrabold tracking-tight">{formatCurrency(totalAmount)}</p><p className="mt-1 break-words text-[11px] text-blue-100/60">{selectedOffering?.name ?? "No offering selected"}</p></div><div className="space-y-4 p-5"><SummaryLine label="Names" value={`${Math.max(attendeeCount, 1)} attendee${Math.max(attendeeCount, 1) === 1 ? "" : "s"}`} /><SummaryLine label="Email" value={form.email || "Not entered"} /><SummaryLine label="School" value={summarySchoolDetails} /><SummaryLine label="Method" value={form.method || "Not selected"} /><SummaryLine label="Timing" value={isPayLater ? "Pay Later · Not Paid Yet" : "Pay Now"} /><SummaryLine label="Step" value={stepLabels[step]} /></div></Card><Card className="p-5"><div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-mint"><Check className="h-4 w-4" /></span><div><p className="text-xs font-bold text-navy-900">PAID</p><p className="mt-1 text-[10px] text-slate-400">After approval</p></div></div><p className="mt-4 text-xs leading-5 text-slate-500">Your receipt and confirmation email are available after approval.</p></Card></aside>
       </div>}
     </div>
   );
@@ -329,6 +332,15 @@ function StepIndicator({ currentStep }: { currentStep: PaymentStep }) {
   const currentIndex = stepOrder.indexOf(currentStep);
   const progress = `${currentIndex + 1} of ${stepOrder.length}`;
   return <nav aria-label="Payment progress" className="rounded-2xl border border-line bg-white px-4 py-3 shadow-soft sm:px-5"><div className="flex items-center justify-between gap-4"><p className="min-w-0 truncate text-sm font-extrabold text-navy-900">{stepLabels[currentStep]}</p><span className="shrink-0 rounded-full bg-navy-900 px-3 py-1 text-[10px] font-extrabold text-white" aria-current="step">{progress}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-navy-50" role="progressbar" aria-valuemin={1} aria-valuemax={stepOrder.length} aria-valuenow={currentIndex + 1} aria-label={`Step ${progress}`}><span className="block h-full rounded-full bg-navy-900 transition-all" style={{ width: `${((currentIndex + 1) / stepOrder.length) * 100}%` }} /></div><p className="sr-only" aria-live="polite">Current step: {stepLabels[currentStep]}, {progress}</p></nav>;
+}
+
+function SiteClosedCard({ message }: { message: string }) {
+  return <Card className="mx-auto max-w-2xl border-amber-200 bg-amber-50/70 p-8 text-center"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700">Payment portal updating</p><h3 className="mt-2 text-xl font-extrabold text-navy-900">Payments are temporarily closed</h3><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-amber-900/75">{message}</p></Card>;
+}
+
+function CompactStudentDetailsStep({ form, errors, yearOptions, maxNames, allowMultipleNames, onChange, onNameChange, onAddName, onRemoveName, onSchoolLevelChange }: { form: PaymentFormState; errors: FormErrors; yearOptions: string[]; maxNames: number; allowMultipleNames: boolean; onChange: <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => void; onNameChange: (index: number, value: string) => void; onAddName: () => void; onRemoveName: (index: number) => void; onSchoolLevelChange: (level: SchoolLevel) => void }) {
+  const attendeeCount = form.attendeeNames.filter((name) => name.trim()).length;
+  return <FormSection icon={ShieldCheck} eyebrow="01 · Student details" title="Add the attendee names" description="Use one email for the whole payment. School details apply to every attendee in this submission."><div className="grid gap-5 md:grid-cols-2"><FormField label="Email address" required error={errors.email} className="md:col-span-2"><div className="relative"><Mail className="pointer-events-none absolute left-3.5 top-3.5 h-4 w-4 text-slate-400" /><Input className="pl-10" type="email" value={form.email} onChange={(event) => onChange("email", event.target.value)} placeholder="you@example.com" autoComplete="email" /></div></FormField><div className="md:col-span-2"><div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"><FieldLabel required>Attendee name{allowMultipleNames ? "s" : ""}</FieldLabel><span className="text-[10px] font-semibold text-slate-400">{attendeeCount} name{attendeeCount === 1 ? "" : "s"} added</span></div><div className="space-y-2">{form.attendeeNames.map((name, index) => <div key={index} className="flex min-w-0 gap-2"><Input className="min-w-0" value={name} onChange={(event) => onNameChange(index, event.target.value)} placeholder={index === 0 ? "Full name" : `Attendee ${index + 1}`} autoComplete={index === 0 ? "name" : "off"} aria-label={`Attendee name ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => onRemoveName(index)} disabled={form.attendeeNames.length === 1} aria-label={`Remove attendee ${index + 1}`}>×</button></div>)}</div><div className="mt-3 flex justify-end">{allowMultipleNames ? <Button type="button" size="sm" variant="outline" onClick={onAddName} disabled={form.attendeeNames.length >= maxNames}>Add attendee</Button> : null}</div>{errors.attendeeNames ? <p className="mt-1.5 text-xs font-semibold text-coral">{errors.attendeeNames}</p> : null}</div><FormField label="School level" required error={errors.schoolLevel} className="md:col-span-2"><div className="flex min-w-0 flex-wrap gap-2">{schoolLevels.map((level) => <CapsuleOption key={level} label={shortSchoolLevel(level)} title={level} selected={form.schoolLevel === level} onClick={() => onSchoolLevelChange(level)} />)}</div></FormField><FormField label="Year level" required error={errors.yearLevel}><div className="flex min-w-0 flex-wrap gap-2">{yearOptions.map((year) => <CapsuleOption key={year} label={year} selected={form.yearLevel === year} onClick={() => onChange("yearLevel", year)} />)}</div></FormField>{form.schoolLevel === "Senior High School" ? <FormField label="Strand" required error={errors.strand}><div className="flex min-w-0 flex-wrap gap-2">{strands.map((strand) => <CapsuleOption key={strand} label={strand} selected={form.strand === strand} onClick={() => onChange("strand", strand)} />)}</div></FormField> : null}{form.schoolLevel === "College" ? <FormField label="Course or program" required error={errors.course}><Input value={form.course} onChange={(event) => onChange("course", event.target.value)} placeholder="BS Computer Science" autoComplete="organization-title" /></FormField> : null}</div></FormSection>;
 }
 
 function StudentDetailsStep({ form, errors, yearOptions, maxNames, allowMultipleNames, onChange, onNameChange, onAddName, onRemoveName, onSchoolLevelChange }: { form: PaymentFormState; errors: FormErrors; yearOptions: string[]; maxNames: number; allowMultipleNames: boolean; onChange: <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => void; onNameChange: (index: number, value: string) => void; onAddName: () => void; onRemoveName: (index: number) => void; onSchoolLevelChange: (level: SchoolLevel) => void }) {
@@ -388,11 +400,18 @@ function ReviewLine({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{label}</p><p className="mt-1 break-words text-xs font-semibold text-navy-900 [overflow-wrap:anywhere]">{value}</p></div>;
 }
 
-function PaymentCompleteContent({ payment, onNewPayment }: { payment: PaymentRecord; onNewPayment: () => void }) {
+function LegacyPaymentCompleteContent({ payment, onNewPayment }: { payment: PaymentRecord; onNewPayment: () => void }) {
   const isPayLater = payment.paymentMode === "PayLater";
   const isPaid = payment.paymentState === "Paid";
   const attendees = getPaymentAttendees(payment);
   return <div className="space-y-5"><Card className="p-5 shadow-soft sm:p-7"><div className="flex items-center justify-between gap-3 border-b border-line pb-4"><OrganizationLogo surface="light" /><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isPaid ? "bg-emerald-50 text-emerald-700" : isPayLater ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>{isPaid ? "Paid" : isPayLater ? "Not Paid Yet" : "Pending review"}</span></div><div className="mt-5 flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-mint"><Check className="h-5 w-5" /></span><div className="min-w-0"><p className="text-base font-extrabold text-navy-900">{isPaid ? "Payment paid" : isPayLater ? "Reservation saved" : "Payment submitted"}</p><p className="mt-1 break-words text-xs leading-5 text-slate-500">{isPaid ? "Your payment is confirmed." : isPayLater ? "Your reservation is Not Paid Yet. Follow the deadline in your email." : "Your payment is Pending while the JPCS admin team reviews it."}</p></div></div><div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2"><SummaryLine label="Reference" value={payment.reference} /><SummaryLine label="Total" value={formatCurrency(payment.amount)} /><SummaryLine label="Attendees" value={String(attendees.length)} /><SummaryLine label="Type" value={payment.offeringName} /><SummaryLine label="Email" value={payment.email} />{isPayLater && payment.paymentDeadlineAt ? <SummaryLine label="Deadline" value={formatManilaDateTime(payment.paymentDeadlineAt)} /> : null}</div><div className="mt-5 rounded-2xl border border-line p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">QR list</p><div className="mt-3 space-y-2">{attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2 text-xs"><span className="break-words font-semibold text-navy-900">{attendee.name}</span><span className="shrink-0 font-mono text-[10px] text-slate-500">{attendee.ticketId ?? "After approval"}</span></div>)}</div></div></Card><div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-navy-800"><ReceiptText className="mt-0.5 h-4 w-4 shrink-0" /><span className="min-w-0 break-words">{isPaid ? `A confirmation email with one QR per attendee will be sent to ${payment.email}.` : isPayLater ? `The attendee QR list was emailed to ${payment.email}. Keep the matching QR for each person.` : `A confirmation email with the attendee QR list will be sent to ${payment.email} after approval.`}</span></div><div className="flex justify-end"><Button variant="outline" onClick={onNewPayment}>Submit another payment</Button></div></div>;
+}
+
+function PaymentCompleteContent({ payment, onNewPayment }: { payment: PaymentRecord; onNewPayment: () => void }) {
+  const attendees = getPaymentAttendees(payment);
+  const isPaid = payment.paymentState === "Paid";
+  const isPayLater = payment.paymentMode === "PayLater";
+  return <div className="space-y-5"><Card className="p-5 shadow-soft sm:p-7"><div className="flex items-center justify-between gap-3 border-b border-line pb-4"><OrganizationLogo surface="light" /><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${isPaid ? "bg-emerald-50 text-emerald-700" : isPayLater ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>{isPaid ? "Paid" : isPayLater ? "Not Paid Yet" : "Pending review"}</span></div><div className="mt-5 flex items-start gap-3"><span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-mint"><Check className="h-5 w-5" /></span><div className="min-w-0"><p className="text-base font-extrabold text-navy-900">{isPaid ? "Payment paid" : isPayLater ? "Reservation saved" : "Payment submitted"}</p><p className="mt-1 break-words text-xs leading-5 text-slate-500">{isPaid ? "Your payment is confirmed." : isPayLater ? "Your reservation is Not Paid Yet. Follow the deadline in your email." : "Your payment is Pending while the JPCS admin team reviews it."}</p></div></div><div className="mt-5 grid min-w-0 gap-3 sm:grid-cols-2"><SummaryLine label="Reference" value={payment.reference} /><SummaryLine label="Total" value={formatCurrency(payment.amount)} /><SummaryLine label="Attendees" value={String(attendees.length)} /><SummaryLine label="Type" value={payment.offeringName} /><SummaryLine label="Email" value={payment.email} />{isPayLater && payment.paymentDeadlineAt ? <SummaryLine label="Deadline" value={formatManilaDateTime(payment.paymentDeadlineAt)} /> : null}</div>{payment.generateQr ? <div className="mt-5 rounded-2xl border border-line p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Attendance QR status</p><div className="mt-3 space-y-2">{attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-mist px-3 py-2 text-xs"><span className="break-words font-semibold text-navy-900">{attendee.name}</span><span className="shrink-0 font-mono text-[10px] text-slate-500">{attendee.ticketId ?? "Pending approval"}</span></div>)}</div></div> : <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-navy-800">Attendance QR generation is disabled for this payment type. Your payment confirmation will still be sent to {payment.email}.</div>}<div className="mt-6 flex justify-end"><Button type="button" onClick={onNewPayment}>Start a new payment</Button></div></Card></div>;
 }
 
 function PaymentPageSkeleton() {

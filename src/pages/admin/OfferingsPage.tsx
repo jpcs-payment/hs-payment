@@ -18,7 +18,7 @@ const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 type EditableAmount = number;
 type EditableAllocation = Omit<PaymentAllocation, "amount"> & { amount: EditableAmount; draftId: string };
-type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[]; imagePath?: string; imageUrl?: string; imageDataUrl?: string; removeImage: boolean };
+type OfferingDraft = Omit<NewPaymentOfferingInput, "amount" | "allocations" | "allowMultipleNames" | "maxNames"> & { id?: string; amount: EditableAmount; allocations: EditableAllocation[]; allowMultipleNames?: boolean; maxNames?: number; imagePath?: string; imageUrl?: string; imageDataUrl?: string; removeImage: boolean };
 
 const toDraftAllocations = (allocations: PaymentAllocation[]): EditableAllocation[] => allocations.map((allocation) => ({ ...allocation, draftId: createId("allocation") }));
 const toOfferingDraft = (offering: PaymentOffering): OfferingDraft => ({ ...offering, allocations: toDraftAllocations(offering.allocations), imageDataUrl: undefined, removeImage: false });
@@ -29,8 +29,7 @@ const emptyDraft = (): OfferingDraft => ({
   description: "",
   amount: 60,
   active: true,
-  allowMultipleNames: false,
-  maxNames: 10,
+  generateQr: true,
   availableMethods: [...methods],
   applicableSchoolLevels: [...schoolLevels],
   allocations: [{ recipient: "JPCS", amount: 60, draftId: createId("allocation") }],
@@ -228,23 +227,6 @@ function LegacyOfferingsPage() {
       });
       return;
     }
-    const maxNames = Number(draft.maxNames);
-    if (!Number.isInteger(maxNames) || maxNames < 1 || maxNames > 10) {
-      pushToast({
-        tone: "error",
-        title: "Invalid name limit",
-        message: "The maximum number of names must be a whole number from 1 to 10.",
-      });
-      return;
-    }
-    if (draft.allowMultipleNames && maxNames < 2) {
-      pushToast({
-        tone: "error",
-        title: "Set a multiple-name limit",
-        message: "Allowing multiple names requires a maximum of at least 2.",
-      });
-      return;
-    }
     if (
       !draft.availableMethods.length ||
       !draft.applicableSchoolLevels.length
@@ -330,8 +312,8 @@ function LegacyOfferingsPage() {
         name: draft.name.trim(),
         description: draft.description.trim(),
         amount,
-        allowMultipleNames: draft.allowMultipleNames,
-        maxNames: draft.allowMultipleNames ? maxNames : 1,
+        allowMultipleNames: data.siteSettings.allowMultipleNames,
+        maxNames: data.siteSettings.allowMultipleNames ? data.siteSettings.maxNames : 1,
         allocations: cleanAllocations,
         payLaterDeadlineAt: draft.payLaterMethods.length ? deadline : undefined,
       };
@@ -495,14 +477,12 @@ export function OfferingsPage() {
   const activeOfferings = data.offerings.filter(
     (offering) => !offering.archivedAt,
   );
-  const typeExportHeaders = ["Type", "Slug", "Description", "Amount per name", "Multiple names", "Maximum names", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"];
+  const typeExportHeaders = ["Type", "Slug", "Description", "Amount per name", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"];
   const typeExportRows = () => activeOfferings.map((offering) => [
     offering.name,
     offering.slug,
     offering.description,
     offering.amount,
-    offering.allowMultipleNames ? "Yes" : "No",
-    offering.allowMultipleNames ? offering.maxNames : 1,
     offering.active ? "Yes" : "No",
     offering.availableMethods.join(" | "),
     offering.payLaterMethods.join(" | "),
@@ -544,14 +524,14 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
          <div><FieldLabel required>Slug</FieldLabel><Input value={draft.slug} onChange={(event) => updateDraft("slug", event.target.value)} placeholder="bootcamp" /><p className="mt-1.5 text-[11px] text-slate-400">Use a unique lowercase identifier.</p></div>
          <div><FieldLabel required>Amount per name</FieldLabel><Input type="number" min="0.01" step="0.01" value={draft.amount} onChange={(event) => updateAmount(event.target.value)} /></div>
          <div className="flex items-end"><button type="button" className={`flex h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition ${draft.active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-line bg-slate-50 text-slate-500"}`} onClick={() => updateDraft("active", !draft.active)}><span>{draft.active ? "Visible on public form" : "Hidden from public form"}</span>{draft.active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
-         <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><FieldLabel>Multiple attendee names</FieldLabel><p className="max-w-xl text-xs leading-5 text-navy-800">Allow one email to pay for several named attendees. Each name receives its own attendance QR, while the payment remains one record.</p></div><button type="button" className={`flex h-11 w-full shrink-0 items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition sm:w-56 ${draft.allowMultipleNames ? "border-navy-700 bg-navy-900 text-white" : "border-line bg-white text-slate-500"}`} onClick={() => updateDraft("allowMultipleNames", !draft.allowMultipleNames)}><span>{draft.allowMultipleNames ? "Enabled" : "Disabled"}</span>{draft.allowMultipleNames ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>{draft.allowMultipleNames ? <div className="mt-4 max-w-xs"><FieldLabel required>Maximum names</FieldLabel><Input type="number" min="2" max="10" step="1" value={draft.maxNames} onChange={(event) => updateDraft("maxNames", Number(event.target.value))} /><p className="mt-1.5 text-[11px] text-navy-700">Choose from 2 to 10 names per email.</p></div> : <p className="mt-3 text-[11px] text-navy-700">The public form will show one name field when this is disabled.</p>}</div>
+         <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><FieldLabel>Attendance QR generation</FieldLabel><p className="max-w-xl text-xs leading-5 text-navy-800">Generate one attendance QR ticket per named attendee after approval and include it in the confirmation email.</p></div><button type="button" className={`flex h-11 w-full shrink-0 items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition sm:w-56 ${draft.generateQr ? "border-navy-700 bg-navy-900 text-white" : "border-line bg-white text-slate-500"}`} onClick={() => updateDraft("generateQr", !draft.generateQr)}><span>{draft.generateQr ? "Enabled" : "Disabled"}</span>{draft.generateQr ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div></div>
       </div>
        <div><FieldLabel required>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Admission payment for the JPCS Bootcamp." /></div>
        <OfferingImageField imageUrl={draft.imageUrl} imageDataUrl={draft.imageDataUrl} onUpload={onImageUpload} onClear={onImageClear} />
        <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
       <div><FieldLabel required>Available for school levels</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{schoolLevels.map((level) => <ToggleChoice key={level} label={level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College"} title={level} selected={draft.applicableSchoolLevels.includes(level)} onClick={() => toggleSchoolLevel(level)} />)}</div></div>
       <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4">
-         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><FieldLabel>Pay Later options</FieldLabel><p className="text-xs leading-5 text-navy-800">Students receive an attendance QR immediately. Admins can scan it at the event while the reservation remains Not Paid Yet.</p></div><span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-bold text-navy-700">Optional</span></div>
+         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><FieldLabel>Pay Later options</FieldLabel><p className="text-xs leading-5 text-navy-800">Reservations remain Not Paid Yet until an admin records payment. Attendance QR behavior follows the setting above.</p></div><span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-bold text-navy-700">Optional</span></div>
         <div className="mt-4 flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.payLaterMethods.includes(method)} disabled={!draft.availableMethods.includes(method)} onClick={() => togglePayLater(method)} />)}</div>
         {draft.payLaterMethods.length ? <div className="mt-4 max-w-sm"><FieldLabel required>Pay Later deadline (Asia/Manila)</FieldLabel><Input type="datetime-local" value={toLocalDateTimeInput(draft.payLaterDeadlineAt)} onChange={(event) => updateDraft("payLaterDeadlineAt", event.target.value ? new Date(event.target.value).toISOString() : undefined)} /><p className="mt-1.5 text-[11px] text-navy-700">Reservations remain visible as overdue after this time; admins can still mark them paid.</p></div> : <p className="mt-3 text-[11px] text-navy-700">Enable at least one method to show the deadline input.</p>}
       </div>
@@ -595,7 +575,7 @@ function PaymentTypeCard({ offering, index, onEdit }: { offering: PaymentOfferin
       </div>
        <p className="relative z-10 mt-5 text-3xl font-extrabold">{formatCurrency(offering.amount)}</p><p className="relative z-10 mt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-blue-100/60">Per name</p>
       <p className="relative z-10 mt-2 min-h-10 break-words text-xs leading-5 text-blue-100/70">{offering.description}</p>
-       <div className="relative z-10 mt-5 flex flex-wrap gap-1.5">{offering.applicableSchoolLevels.map((level) => <span key={level} className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-blue-50">{level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : level}</span>)}<span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-blue-50">{offering.allowMultipleNames ? `Up to ${offering.maxNames} names` : "One name"}</span>{offering.payLaterMethods.length ? <span className="rounded-full bg-amber-300/20 px-2 py-1 text-[10px] font-semibold text-amber-100">Pay Later · {offering.payLaterMethods.join("/")}</span> : null}</div>
+       <div className="relative z-10 mt-5 flex flex-wrap gap-1.5">{offering.applicableSchoolLevels.map((level) => <span key={level} className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-semibold text-blue-50">{level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : level}</span>)}{offering.payLaterMethods.length ? <span className="rounded-full bg-amber-300/20 px-2 py-1 text-[10px] font-semibold text-amber-100">Pay Later · {offering.payLaterMethods.join("/")}</span> : null}</div>
       <div className="relative z-10 mt-5 border-t border-white/10 pt-4"><div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-blue-100/70">{offering.allocations.map((allocation) => <span key={allocation.recipient}>{allocation.recipient}: {formatCurrency(allocation.amount)}</span>)}</div>{offering.payLaterDeadlineAt ? <p className="mt-2 text-[10px] font-semibold text-amber-100">Deadline: {formatManilaDateTime(offering.payLaterDeadlineAt)}</p> : null}</div>
       <div className="relative z-10 mt-5 flex justify-end border-t border-white/10 pt-4"><Button variant="ghost" size="sm" className="border border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white" onClick={onEdit}><Settings2 className="h-3.5 w-3.5" /> Edit type</Button></div>
     </Card>

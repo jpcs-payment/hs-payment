@@ -8,6 +8,7 @@ const maxEmailSubmissions = 5;
 const maxIpSubmissions = 20;
 const emailAlreadyUsedMessage = "email has been used";
 const duplicateEmailConstraint = "hs_payments_email_once_idx";
+const allowedStrands = new Set(["ABM", "GAS", "HUMSS", "STEM", "HE", "ICT"]);
 
 const config = () => ({
   supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
@@ -55,7 +56,7 @@ const normalizeInput = (input) => {
   if (!["PayNow", "PayLater"].includes(paymentMode)) throw new PublicSubmissionError("The selected payment timing is invalid.");
   const strand = typeof payment.strand === "string" ? payment.strand.trim() : undefined;
   const course = typeof payment.course === "string" ? payment.course.trim() : undefined;
-  if (schoolLevel === "Senior High School" && !strand) throw new PublicSubmissionError("A strand is required for Senior High School payers.");
+  if (schoolLevel === "Senior High School" && (!strand || !allowedStrands.has(strand))) throw new PublicSubmissionError("Choose a valid Senior High School strand.");
   if (schoolLevel === "College" && !course) throw new PublicSubmissionError("A course is required for College payers.");
   const senderAccountName = typeof payment.senderAccountName === "string" ? payment.senderAccountName.trim() : undefined;
   const senderReference = typeof payment.senderReference === "string" ? payment.senderReference.trim() : undefined;
@@ -122,15 +123,18 @@ export async function submitPayment(input, { requestKey } = {}) {
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
     return existingPayment;
   }
+  const settingsResponse = await client.from("hs-site-settings").select("is_open,public_message,allow_multiple_names,max_names").eq("site_key", "public-payment").maybeSingle();
+  if (settingsResponse.error) throw settingsResponse.error;
+  const siteSettings = settingsResponse.data;
+  if (!siteSettings?.is_open) throw new PublicSubmissionError(siteSettings?.public_message || "The payment portal is temporarily closed while we update it. Please check back soon.", 423);
+  const maxNames = siteSettings.allow_multiple_names ? Math.min(10, Math.max(2, Number(siteSettings.max_names) || 10)) : 1;
+  if (payment.attendeeNames.length > maxNames) throw new PublicSubmissionError(`The payment portal allows at most ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
   await checkSubmissionRateLimit(client, payment.email, requestKey, serviceRoleKey);
 
-  const offeringResponse = await client.from("hs-offerings").select("allow_multiple_names,max_names,active,archived_at").eq("id", payment.offeringId).maybeSingle();
+  const offeringResponse = await client.from("hs-offerings").select("active,archived_at").eq("id", payment.offeringId).maybeSingle();
   if (offeringResponse.error) throw offeringResponse.error;
   const offering = offeringResponse.data;
   if (!offering?.active || offering.archived_at) throw new PublicSubmissionError("The selected payment type is not available.");
-  const maxNames = offering.allow_multiple_names ? Number(offering.max_names) || 1 : 1;
-  if (payment.attendeeNames.length > maxNames) throw new PublicSubmissionError(`The selected payment type allows at most ${maxNames} name${maxNames === 1 ? "" : "s"}.`);
-
   const payerId = randomUUID();
   let proofPath;
   try {

@@ -15,6 +15,7 @@ import type {
   PaymentOfferingImageUpdate,
   PaymentOffering,
   PaymentRecord,
+  PublicSiteSettings,
   SchoolLevel,
   Session,
   Student,
@@ -48,6 +49,7 @@ interface AppContextValue {
   restorePayer: (payerId: string) => Promise<void>;
   deletePayerPermanently: (payerId: string) => Promise<void>;
   savePaymentMethod: (method: PaymentMethodConfig) => Promise<void>;
+  savePublicSiteSettings: (settings: PublicSiteSettings) => Promise<void>;
   resetDemo: () => void;
 }
 
@@ -65,6 +67,8 @@ const offeringImageBucket = "hs-offering-images";
 const paymentProofBucket = "hs-payment-proofs";
 const maxOfferingImageBytes = 5 * 1024 * 1024;
 const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
+const publicSiteKey = "public-payment";
+const defaultPublicSiteMessage = "The payment portal is temporarily closed while we update it. Please check back soon.";
 
 const toAllocations = (value: unknown, amount: number): PaymentAllocation[] => {
   if (Array.isArray(value)) {
@@ -100,6 +104,7 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     description: String(row.description ?? ""),
     amount,
     active: Boolean(row.active),
+    generateQr: row.generate_qr !== false,
     allowMultipleNames: Boolean(row.allow_multiple_names),
     maxNames: Math.max(1, Number(row.max_names) || 1),
     availableMethods: Array.isArray(row.available_methods) ? row.available_methods : ["Cash", "GCash", "MariBank"],
@@ -120,6 +125,14 @@ const mapMethod = (row: DbRow): PaymentMethodConfig => ({
   accountNumber: String(row.account_number ?? ""),
   instructions: String(row.instructions ?? ""),
   qrImage: row.qr_image ?? undefined,
+});
+
+const mapSiteSettings = (row?: DbRow | null): PublicSiteSettings => ({
+  siteKey: publicSiteKey,
+  isOpen: row ? Boolean(row.is_open) : false,
+  message: String(row?.public_message ?? defaultPublicSiteMessage),
+  allowMultipleNames: Boolean(row?.allow_multiple_names),
+  maxNames: Math.min(10, Math.max(1, Number(row?.max_names) || 10)),
 });
 
 const mapPayer = (row: DbRow): Student => ({
@@ -166,6 +179,7 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
     offeringId: String(row.offering_id),
     offeringName: String(row.offering_name ?? offering?.name ?? "Film Showing"),
     amount,
+    generateQr: row.generate_qr !== false,
     attendeeCount,
     attendees,
     allocations: toAllocations(row.allocations ?? row.revenue_split, amount),
@@ -243,21 +257,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const client = requireSupabase();
       const offeringsQuery = client.from("hs-offerings").select("*").order("created_at", { ascending: true });
       const methodsQuery = client.from("hs-payment-methods").select("*").order("id", { ascending: true });
+      const siteSettingsQuery = client.from("hs-site-settings").select("*").eq("site_key", publicSiteKey).maybeSingle();
       if (!admin) {
         offeringsQuery.eq("active", true).is("archived_at", null);
         methodsQuery.eq("enabled", true);
       }
-      const [offeringsResponse, methodsResponse] = await Promise.all([
+      const [offeringsResponse, methodsResponse, siteSettingsResponse] = await Promise.all([
         offeringsQuery,
         methodsQuery,
+        siteSettingsQuery,
       ]);
       if (offeringsResponse.error) throw offeringsResponse.error;
       if (methodsResponse.error) throw methodsResponse.error;
+      if (siteSettingsResponse.error) throw siteSettingsResponse.error;
 
       const offerings = (offeringsResponse.data ?? []).map(mapOffering);
       const paymentMethods = (methodsResponse.data ?? []).map(mapMethod);
+      const siteSettings = mapSiteSettings(siteSettingsResponse.data);
       if (!admin) {
-        setData((current) => ({ ...current, offerings, paymentMethods }));
+        setData((current) => ({ ...current, offerings, paymentMethods, siteSettings }));
         return;
       }
 
@@ -290,7 +308,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
       const payments = paymentRows.map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap, attendeeMap));
-      setData({ students, offerings, paymentMethods, payments, developers: [] });
+      setData({ students, offerings, paymentMethods, siteSettings, payments, developers: [] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
       setDataError(message);
@@ -372,6 +390,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const submitPayment = async (input: NewPaymentInput) => {
+    if (!data.siteSettings.isOpen) throw new Error(data.siteSettings.message);
     const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.archivedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
@@ -383,7 +402,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const attendeeNames = (input.attendeeNames?.length ? input.attendeeNames : [input.studentName])
       .map((name) => name.trim())
       .filter(Boolean);
-    const maxNames = offering.allowMultipleNames ? offering.maxNames : 1;
+    const maxNames = data.siteSettings.allowMultipleNames ? data.siteSettings.maxNames : 1;
     if (!attendeeNames.length || attendeeNames.length > maxNames) {
       throw new Error(`Add between 1 and ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
     }
@@ -465,8 +484,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentPayment) return undefined;
     if (currentPayment.status === "Approved") return currentPayment;
     const receiptNumber = currentPayment.receiptNumber ?? createReference("RCPT");
-    const ticketId = currentPayment.ticketId ?? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-    const ticketQrValue = currentPayment.ticketQrValue ?? createTicketQrValue(ticketId);
+    const ticketId = currentPayment.ticketId ?? (currentPayment.generateQr ? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}` : "");
+    const ticketQrValue = currentPayment.ticketQrValue ?? (currentPayment.generateQr ? createTicketQrValue(ticketId) : "");
     const { data: updatedRow, error } = await client.rpc("hs_approve_payment", {
       p_payment_id: paymentId,
       p_receipt_number: receiptNumber,
@@ -490,8 +509,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedByName: row.approved_by_name ?? undefined,
       approvedByEmail: row.approved_by_email ?? undefined,
       receiptNumber: String(row.receipt_number ?? receiptNumber),
-      ticketId: String(row.ticket_id ?? firstAttendee?.ticketId ?? ticketId),
-      ticketQrValue: String(row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? ticketQrValue),
+      ticketId: row.ticket_id ?? firstAttendee?.ticketId ?? (currentPayment.generateQr ? ticketId : undefined),
+      ticketQrValue: row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? (currentPayment.generateQr ? ticketQrValue : undefined),
       rejectionReason: undefined,
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? approvedPayment : payment) }));
@@ -505,8 +524,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentPayment.paymentMode !== "PayLater") throw new Error("Only Pay Later payments can use this action.");
     if (currentPayment.status === "Approved" && currentPayment.paymentState === "Paid") return currentPayment;
     const receiptNumber = currentPayment.receiptNumber ?? createReference("RCPT");
-    const ticketId = currentPayment.ticketId ?? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
-    const ticketQrValue = currentPayment.ticketQrValue ?? createTicketQrValue(ticketId);
+    const ticketId = currentPayment.ticketId ?? (currentPayment.generateQr ? `TKT-${new Date().getFullYear().toString().slice(-2)}${createUuid().replace(/-/g, "").slice(0, 8).toUpperCase()}` : "");
+    const ticketQrValue = currentPayment.ticketQrValue ?? (currentPayment.generateQr ? createTicketQrValue(ticketId) : "");
     const { data: updatedRow, error } = await client.rpc("hs_mark_pay_later_received", {
       p_payment_id: paymentId,
       p_receipt_number: receiptNumber,
@@ -530,8 +549,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       approvedByName: row.approved_by_name ?? undefined,
       approvedByEmail: row.approved_by_email ?? undefined,
       receiptNumber: String(row.receipt_number ?? receiptNumber),
-      ticketId: String(row.ticket_id ?? firstAttendee?.ticketId ?? ticketId),
-      ticketQrValue: String(row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? ticketQrValue),
+      ticketId: row.ticket_id ?? firstAttendee?.ticketId ?? (currentPayment.generateQr ? ticketId : undefined),
+      ticketQrValue: row.ticket_qr_value ?? firstAttendee?.ticketQrValue ?? (currentPayment.generateQr ? ticketQrValue : undefined),
       rejectionReason: undefined,
     };
     setData((current) => ({ ...current, payments: current.payments.map((payment) => payment.id === paymentId ? paidPayment : payment) }));
@@ -769,6 +788,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         description: input.description.trim(),
         amount: input.amount,
         active: input.active,
+        generate_qr: input.generateQr,
         allow_multiple_names: input.allowMultipleNames,
         max_names: input.maxNames,
         available_methods: input.availableMethods,
@@ -816,6 +836,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         description: offering.description.trim(),
         amount: offering.amount,
         active: offering.active,
+        generate_qr: offering.generateQr,
         allow_multiple_names: offering.allowMultipleNames,
         max_names: offering.maxNames,
         available_methods: offering.availableMethods,
@@ -861,13 +882,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setData((current) => ({ ...current, paymentMethods: current.paymentMethods.map((item) => item.id === method.id ? method : item) }));
   };
 
+  const savePublicSiteSettings = async (settings: PublicSiteSettings) => {
+    const client = requireSupabase();
+    const { data: row, error } = await client.rpc("hs_update_public_payment_settings", {
+      p_is_open: settings.isOpen,
+      p_public_message: settings.message.trim(),
+      p_allow_multiple_names: settings.allowMultipleNames,
+      p_max_names: settings.maxNames,
+    });
+    if (error) throw error;
+    const updatedRow = (Array.isArray(row) ? row[0] : row) as DbRow | undefined;
+    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : settings;
+    setData((current) => ({ ...current, siteSettings: nextSettings }));
+  };
+
   const resetDemo = () => {
     if (session?.role === "admin") void loadData(true);
     else void loadData(false);
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, deleteOfferingPermanently, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, deleteOfferingPermanently, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

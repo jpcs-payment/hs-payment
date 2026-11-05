@@ -186,7 +186,7 @@ function LegacyPaymentsPage() {
         await sendApprovalEmail(paid);
         pushToast({
           tone: "success",
-          title: "Payment received and QR activated",
+          title: paid.generateQr ? "Payment received and QR activated" : "Payment received and emailed",
           message: `The confirmation was sent to ${paid.email}.`,
         });
       } catch (error) {
@@ -196,7 +196,7 @@ function LegacyPaymentsPage() {
           message:
             error instanceof Error
               ? error.message
-              : "The QR is active; retry the email from the payment details.",
+              : paid.generateQr ? "The QR is active; retry the email from the payment details." : "Retry the email from the payment details.",
         });
       }
     } catch (error) {
@@ -418,10 +418,10 @@ function LegacyPaymentsPage() {
         title="Approve payment?"
         description={
           approveRecord
-            ? `This will issue a receipt and one QR ticket for each attendee: ${getPaymentAttendees(approveRecord).map((attendee) => attendee.name).join(", ")}. The current signed-in admin will be recorded as the approver.`
+            ? approveRecord.generateQr ? `This will issue a receipt and one QR ticket for each attendee: ${getPaymentAttendees(approveRecord).map((attendee) => attendee.name).join(", ")}. The current signed-in admin will be recorded as the approver.` : `This will issue a receipt for ${getPaymentAttendees(approveRecord).map((attendee) => attendee.name).join(", ")}. QR generation is disabled for this payment type. The current signed-in admin will be recorded as the approver.`
             : ""
         }
-        confirmLabel="Approve and issue ticket"
+        confirmLabel={approveRecord?.generateQr ? "Approve and issue ticket" : "Approve payment"}
         loading={actionLoading}
       />
       <ConfirmDialog
@@ -431,7 +431,7 @@ function LegacyPaymentsPage() {
         title="Mark Pay Later payment received?"
         description={
           markRecord
-            ? `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, activates their QR tickets, and sends the payment confirmation email.`
+            ? markRecord.generateQr ? `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, activates their QR tickets, and sends the payment confirmation email.` : `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, and sends the payment confirmation email without QR tickets.`
             : ""
         }
         confirmLabel="Mark received"
@@ -658,9 +658,9 @@ function PaymentDetails({
         />
       </div>
       <div className="rounded-2xl border border-line bg-mist p-4">
-        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Attendees and QR tickets</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{payment.generateQr ? "Attendees and QR tickets" : "Attendees"}</p>
         <div className="mt-3 space-y-2">
-          {attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs"><span className="break-words font-semibold text-slate-600">{attendee.name}</span><span className="shrink-0 font-mono text-[10px] text-navy-900">{attendee.ticketId ?? "Not issued yet"}</span></div>)}
+          {attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs"><span className="break-words font-semibold text-slate-600">{attendee.name}</span><span className="shrink-0 font-mono text-[10px] text-navy-900">{payment.generateQr ? attendee.ticketId ?? "Not issued yet" : "QR disabled"}</span></div>)}
         </div>
       </div>
       <div className="rounded-2xl border border-line bg-mist p-4">
@@ -688,7 +688,7 @@ function PaymentDetails({
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
           <div className="min-w-0">
             <p className="text-xs font-bold text-emerald-900">
-              Payment received and QR active
+              {payment.generateQr ? "Payment received and QR active" : "Payment received"}
             </p>
             <p className="mt-1 break-words text-xs leading-5 text-emerald-800">
               {approvedBy || "Admin identity not recorded"} · {formatDateTime(payment.approvedAt ?? payment.submittedAt)}
@@ -720,7 +720,7 @@ function PaymentDetails({
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-navy-700" />
           <p className="text-xs leading-5 text-navy-800">
             {isPayLaterUnpaid
-              ? "Verify payment externally, then use Mark payment received to activate the attendance QR."
+              ? payment.generateQr ? "Verify payment externally, then use Mark payment received to activate the attendance QR." : "Verify payment externally, then use Mark payment received to record the payment."
               : "This is a cash submission. Verify the cashier reference before confirming."}
           </p>
         </div>
