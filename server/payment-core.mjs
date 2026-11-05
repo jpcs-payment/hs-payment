@@ -124,7 +124,7 @@ export async function submitPayment(input, { requestKey } = {}) {
   if (settingsResponse.error) throw settingsResponse.error;
   const siteSettings = settingsResponse.data;
   if (!siteSettings?.is_open) throw new PublicSubmissionError(siteSettings?.public_message || "The payment portal is temporarily closed while we update it. Please check back soon.", 423);
-  const maxNames = siteSettings.allow_multiple_names ? Math.min(10, Math.max(2, Number(siteSettings.max_names) || 10)) : 1;
+  const maxNames = siteSettings.allow_multiple_names ? Math.min(20, Math.max(2, Number(siteSettings.max_names) || 10)) : 1;
   if (payment.attendeeNames.length > maxNames) throw new PublicSubmissionError(`The payment portal allows at most ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
   await checkSubmissionRateLimit(client, payment.email, requestKey, serviceRoleKey);
 

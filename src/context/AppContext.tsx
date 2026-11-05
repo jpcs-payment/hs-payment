@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { cloneInitialData } from "../data/seed";
 import { createTicketQrValue } from "../lib/branding";
-import { sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
+import { EmailDeliveryError, sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
 import { initials, createReference } from "../lib/utils";
 import { getPaymentAttendees, getPaymentPayerIds } from "../lib/payment";
 import { requireSupabase, supabase } from "../lib/supabase";
@@ -132,7 +132,7 @@ const mapSiteSettings = (row?: DbRow | null): PublicSiteSettings => ({
   isOpen: row ? Boolean(row.is_open) : false,
   message: String(row?.public_message ?? defaultPublicSiteMessage),
   allowMultipleNames: Boolean(row?.allow_multiple_names),
-  maxNames: Math.min(10, Math.max(1, Number(row?.max_names) || 10)),
+  maxNames: Math.min(20, Math.max(1, Number(row?.max_names) || 10)),
 });
 
 const mapPayer = (row: DbRow): Student => ({
@@ -627,32 +627,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return updated;
   };
 
-  const sendApprovalEmail = async (payment: PaymentRecord) => {
-    if (payment.status !== "Approved") return undefined;
-    await updateEmailState(payment.id, { email_delivery_status: "Sending", email_delivery_error: null });
-    try {
-      const response = await deliverApprovalEmail(payment);
-      const sentAt = new Date().toISOString();
-      const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
-      return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "The approval email could not be sent.";
-      await updateEmailState(payment.id, { email_delivery_status: "Failed", email_delivery_error: message });
-      throw error;
-    }
+  const markEmailDeliveryFailed = async (paymentId: string, message: string) => {
+    const client = requireSupabase();
+    const { error } = await client.from("hs-payments").update({ email_delivery_status: "Failed", email_delivery_error: message }).eq("id", paymentId).eq("email_delivery_status", "Sending");
+    if (error) throw error;
   };
 
-  const sendPayLaterEmail = async (payment: PaymentRecord) => {
-    if (payment.paymentMode !== "PayLater") return undefined;
-    // Public submissions cannot update the admin-only email audit fields, so delivery must not be blocked by that optional write.
+  const sendApprovalEmail = async (payment: PaymentRecord) => {
+    if (payment.status !== "Approved") return undefined;
+    if (payment.emailDeliveryStatus === "Sent") return payment;
     try {
-      await updateEmailState(payment.id, { email_delivery_status: "Sending", email_delivery_error: null });
-    } catch {
-      // Continue with the email request for anonymous Pay Later submissions.
-    }
-    try {
-      const response = await deliverPayLaterEmail(payment);
-      const sentAt = new Date().toISOString();
+      const response = await deliverApprovalEmail(payment);
+      const sentAt = response.emailSentAt ?? new Date().toISOString();
       try {
         const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
         return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
@@ -660,9 +646,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
       }
     } catch (error) {
+      if (error instanceof EmailDeliveryError && error.status === 409 && error.message.includes("already been sent")) {
+        try {
+          const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_delivery_error: null });
+          return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const };
+        } catch {
+          return { ...payment, emailDeliveryStatus: "Sent" as const };
+        }
+      }
+      const message = error instanceof Error ? error.message : "The approval email could not be sent.";
+      try {
+        await markEmailDeliveryFailed(payment.id, message);
+      } catch {
+        // The server owns delivery state; do not overwrite a possible successful send from a lost response.
+      }
+      throw error;
+    }
+  };
+
+  const sendPayLaterEmail = async (payment: PaymentRecord) => {
+    if (payment.paymentMode !== "PayLater") return undefined;
+    if (payment.emailDeliveryStatus === "Sent") return payment;
+    try {
+      const response = await deliverPayLaterEmail(payment);
+      const sentAt = response.emailSentAt ?? new Date().toISOString();
+      try {
+        const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
+        return sent ?? { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
+      } catch {
+        return { ...payment, emailDeliveryStatus: "Sent" as const, emailSentAt: sentAt, emailId: response.emailId ?? undefined };
+      }
+    } catch (error) {
+      if (error instanceof EmailDeliveryError && error.status === 409 && error.message.includes("already been sent")) {
+        return { ...payment, emailDeliveryStatus: "Sent" as const };
+      }
       const message = error instanceof Error ? error.message : "The Pay Later email could not be sent.";
       try {
-        await updateEmailState(payment.id, { email_delivery_status: "Failed", email_delivery_error: message });
+        await markEmailDeliveryFailed(payment.id, message);
       } catch {
         // The delivery error is still surfaced to the student even if the audit write is unavailable.
       }
@@ -929,8 +949,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const client = requireSupabase();
     const requestedMaxNames = Number.isFinite(settings.maxNames) ? Math.round(settings.maxNames) : 1;
     const maxNames = settings.allowMultipleNames
-      ? Math.min(10, Math.max(2, requestedMaxNames))
-      : Math.min(10, Math.max(1, requestedMaxNames));
+      ? Math.min(20, Math.max(2, requestedMaxNames))
+      : Math.min(20, Math.max(1, requestedMaxNames));
     const { data: row, error } = await client.rpc("hs_update_public_payment_settings", {
       p_is_open: settings.isOpen,
       p_public_message: settings.message.trim(),

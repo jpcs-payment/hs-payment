@@ -85,7 +85,7 @@ const createHtmlContent = (payment, payLater) => {
     : `<tr>${field("Reference", payment.reference)}${field("Receipt", payment.receiptNumber)}</tr><tr>${field("Total", formatCurrency(Number(payment.amount)))}${field("Method", payment.method)}</tr><tr>${field("Names", `${names.length} attendee${names.length === 1 ? "" : "s"}`)}${field("School details", paymentDetails(payment))}</tr><tr>${field("Confirmed", formatDateTime(payment.approvedAt))}${field("Allocations", allocationDetails(payment))}</tr>`;
   const qrNote = payment.generateQr !== false
     ? payLater ? "A separate QR is attached for each attendee. The payment remains Not Paid Yet until it is collected and recorded by an admin." : "A separate QR is attached for each attendee. Download the matching PNG before attending."
-    : "Attendance QR generation is disabled for this payment type. This email contains the payment details and attendee list.";
+    : "Keep this email and take a screenshot of this confirmation for your records. The payment details and attendee list are included.";
   return `<!doctype html><html lang="en"><body style="margin:0;background:#f4f7fb;color:#17243a;font-family:Arial,sans-serif"><div style="max-width:640px;margin:0 auto;padding:28px 16px"><div style="overflow:hidden;border:1px solid #d9e2ef;border-radius:18px;background:#ffffff"><div style="padding:24px;background:#0b1f3a;color:#ffffff"><div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#bfd4ed;font-weight:700">JPCS - LCC Payment Portal</div><div style="margin-top:8px;font-size:24px;font-weight:800">${statusTitle}</div><div style="margin-top:7px;font-size:13px;color:#d8e7f7">${subtitle}</div></div><div style="padding:28px 24px"><p style="margin:0;font-size:16px;font-weight:700;color:#0b1f3a">Hi ${escapeHtml(firstName)},</p><p style="margin:14px 0 0;font-size:14px;line-height:1.7;color:#60708a">${intro}</p><table role="presentation" style="width:100%;margin:22px 0 0;border-spacing:7px;table-layout:fixed">${rows}</table><div style="margin-top:20px;padding:16px;border:1px solid #d9e2ef;border-radius:16px;background:#f4f7fb"><div style="font-size:14px;font-weight:800;color:#0b1f3a">Attendees and tickets</div><ul style="margin:12px 0 0;padding-left:20px;font-size:13px;line-height:1.6">${attendeeListHtml(payment)}</ul></div><div style="margin:18px auto 0;max-width:360px;padding:18px;text-align:center;border:1px solid #d9e2ef;border-radius:16px;background:#f4f7fb"><div style="font-size:14px;font-weight:800;color:#0b1f3a">Attendance QR list included</div><div style="margin-top:8px;font-size:11px;line-height:1.6;color:#7a8799">${qrNote}</div></div></div><div style="padding:18px 24px;border-top:1px solid #d9e2ef;background:#f4f7fb;font-size:11px;line-height:1.6;color:#7a8799">JPCS - LCC · Junior Philippines Computer Studies · ${payLater ? "Keep this email and pay before the deadline." : "Payment confirmation"}</div></div></div></body></html>`;
 };
 
@@ -112,7 +112,7 @@ const createText = (payment, payLater) => [
   payment.generateQr !== false ? "Attendees and tickets:" : "Attendees:",
   attendeeListText(payment),
   "",
-  payment.generateQr !== false ? payLater ? "The attendance QR is attached and can be used for event entry. Your payment remains Not Paid Yet until it is collected and recorded by an admin." : "The attendance QR code is attached to this email." : "Attendance QR generation is disabled for this payment type.",
+  payment.generateQr !== false ? payLater ? "The attendance QR is attached and can be used for event entry. Your payment remains Not Paid Yet until it is collected and recorded by an admin." : "The attendance QR code is attached to this email." : "Keep this email and take a screenshot of this confirmation for your records.",
 ].join("\n");
 
 const validatePayment = (payment, payLater) => {
@@ -233,6 +233,45 @@ const verifyAdminAuthorization = async (authorization) => {
   return Array.isArray(admins) && admins.length ? null : "Only a registered JPCS admin can send approval emails.";
 };
 
+const updatePaymentEmailState = async (paymentId, values) => {
+  const { supabaseUrl, serviceRoleKey } = config();
+  if (!supabaseUrl || !serviceRoleKey) return { error: "Server email delivery tracking is not configured." };
+  const response = await fetch(`${supabaseUrl}/rest/v1/hs-payments?id=eq.${encodeURIComponent(paymentId)}`, {
+    method: "PATCH",
+    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+    body: JSON.stringify(values),
+  });
+  return response.ok ? { error: null } : { error: "Server email delivery tracking is unavailable." };
+};
+
+const claimEmailDelivery = async (payment) => {
+  const { supabaseUrl, serviceRoleKey } = config();
+  if (!supabaseUrl || !serviceRoleKey) return { error: "Server email delivery tracking is not configured." };
+  const headers = { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` };
+  const paymentId = encodeURIComponent(payment.id);
+  const sentAttemptResponse = await fetch(`${supabaseUrl}/rest/v1/hs-email-deliveries?payment_id=eq.${paymentId}&status=eq.Sent&select=id&limit=1`, { headers });
+  if (!sentAttemptResponse.ok) return { error: "Server email delivery tracking is unavailable." };
+  const sentAttempts = await sentAttemptResponse.json();
+  if (Array.isArray(sentAttempts) && sentAttempts.length) return { sent: true };
+
+  const claimResponse = await fetch(`${supabaseUrl}/rest/v1/hs-payments?id=eq.${paymentId}&or=(email_delivery_status.is.null,email_delivery_status.eq.Failed)`, {
+    method: "PATCH",
+    headers: { ...headers, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({ email_delivery_status: "Sending", email_delivery_error: null }),
+  });
+  if (!claimResponse.ok) return { error: "Server email delivery tracking is unavailable." };
+  const claimedRows = await claimResponse.json();
+  if (Array.isArray(claimedRows) && claimedRows.length) return { claimed: true };
+
+  const statusResponse = await fetch(`${supabaseUrl}/rest/v1/hs-payments?id=eq.${paymentId}&select=email_delivery_status`, { headers });
+  if (!statusResponse.ok) return { error: "Server email delivery tracking is unavailable." };
+  const statusRows = await statusResponse.json();
+  const status = Array.isArray(statusRows) ? statusRows[0]?.email_delivery_status : undefined;
+  if (status === "Sent") return { sent: true };
+  if (status === "Sending") return { inProgress: true };
+  return { error: "The payment email could not be claimed for delivery." };
+};
+
 const beginEmailDelivery = async (payment) => {
   const { supabaseUrl, serviceRoleKey } = config();
   if (!supabaseUrl || !serviceRoleKey) return { error: "Server email delivery tracking is not configured." };
@@ -278,48 +317,75 @@ const sendEmail = async (payment, payLater, { verify = false, requireAdmin = fal
     if (verificationError.error) return { status: 403, body: { error: verificationError.error } };
     deliveryPayment = verificationError.payment;
   }
+  const deliveryClaim = await claimEmailDelivery(deliveryPayment);
+  if (deliveryClaim.error) return { status: 503, body: { error: deliveryClaim.error } };
+  if (deliveryClaim.sent) return { status: 409, body: { error: "This payment confirmation email has already been sent." } };
+  if (deliveryClaim.inProgress) return { status: 409, body: { error: "This payment confirmation email is already being sent." } };
   const deliveryAttempt = await beginEmailDelivery(deliveryPayment);
-  if (deliveryAttempt.error) return { status: 503, body: { error: deliveryAttempt.error } };
-  if (deliveryAttempt.limited) return { status: 429, body: { error: "Too many email delivery attempts. Try again later." } };
+  if (deliveryAttempt.error) {
+    await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Failed", email_delivery_error: deliveryAttempt.error });
+    return { status: 503, body: { error: deliveryAttempt.error } };
+  }
+  if (deliveryAttempt.limited) {
+    const message = "Too many email delivery attempts. Try again later.";
+    await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Failed", email_delivery_error: message });
+    return { status: 429, body: { error: message } };
+  }
   const { apiKey, from, fromName, replyTo } = config();
-  if (!apiKey || !isEmail(from)) return { status: 503, body: { error: "Brevo is not configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL in the deployment environment." } };
-
-  const usedAttachmentNames = new Set();
-  const qrAttachments = deliveryPayment.generateQr === false ? [] : await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
-    const qrBuffer = await QRCode.toBuffer(attendee.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
-    const baseName = attachmentBaseName(attendee.name, index);
-    let fileName = baseName;
-    let suffix = 2;
-    while (usedAttachmentNames.has(fileName)) fileName = `${baseName}-${suffix++}`;
-    usedAttachmentNames.add(fileName);
-    return {
-      content: qrBuffer.toString("base64"),
-      name: `jpcs-lcc-attendance-qr-${fileName}.png`,
-    };
-  }));
-  const response = await fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: { accept: "application/json", "api-key": apiKey, "content-type": "application/json" },
-    body: JSON.stringify({
-      sender: { name: fromName, email: from },
-      to: [{ email: deliveryPayment.email.trim(), name: attendeeNames(deliveryPayment)[0] ?? deliveryPayment.studentName.trim() }],
-      replyTo: { email: replyTo },
-      subject: `Your JPCS - LCC ${deliveryPayment.offeringName} ${payLater ? "Pay Later reservation" : "confirmation"}`,
-      htmlContent: createHtml(deliveryPayment, payLater),
-      textContent: createText(deliveryPayment, payLater),
-      attachment: qrAttachments,
-      tags: ["jpcs-payment", payLater ? "pay-later" : "film-showing"],
-    }),
-  });
-  let body = {};
-  try { body = await response.json(); } catch { body = {}; }
-  if (!response.ok) {
-    const message = typeof body?.message === "string" ? body.message : "Brevo rejected the email.";
+  if (!apiKey || !isEmail(from)) {
+    const message = "Brevo is not configured. Set BREVO_API_KEY and BREVO_FROM_EMAIL in the deployment environment.";
     await finishEmailDelivery(deliveryAttempt.id, "Failed", null, message);
+    await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Failed", email_delivery_error: message });
+    return { status: 503, body: { error: message } };
+  }
+
+  try {
+    const usedAttachmentNames = new Set();
+    const qrAttachments = deliveryPayment.generateQr === false ? undefined : await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
+      const qrBuffer = await QRCode.toBuffer(attendee.ticketQrValue, { width: 520, margin: 2, errorCorrectionLevel: "H", color: { dark: "#0B1F3A", light: "#FFFFFF" } });
+      const baseName = attachmentBaseName(attendee.name, index);
+      let fileName = baseName;
+      let suffix = 2;
+      while (usedAttachmentNames.has(fileName)) fileName = `${baseName}-${suffix++}`;
+      usedAttachmentNames.add(fileName);
+      return {
+        content: qrBuffer.toString("base64"),
+        name: `${fileName}.png`,
+      };
+    }));
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { accept: "application/json", "api-key": apiKey, "content-type": "application/json" },
+      body: JSON.stringify({
+        sender: { name: fromName, email: from },
+        to: [{ email: deliveryPayment.email.trim(), name: attendeeNames(deliveryPayment)[0] ?? deliveryPayment.studentName.trim() }],
+        replyTo: { email: replyTo },
+        subject: `Your JPCS - LCC ${deliveryPayment.offeringName} ${payLater ? "Pay Later reservation" : "confirmation"}`,
+        htmlContent: createHtml(deliveryPayment, payLater),
+        textContent: createText(deliveryPayment, payLater),
+        ...(qrAttachments ? { attachment: qrAttachments } : {}),
+        tags: ["jpcs-payment", payLater ? "pay-later" : "film-showing"],
+      }),
+    });
+    let body = {};
+    try { body = await response.json(); } catch { body = {}; }
+    if (!response.ok) {
+      const message = typeof body?.message === "string" ? body.message : "Brevo rejected the email.";
+      await finishEmailDelivery(deliveryAttempt.id, "Failed", null, message);
+      await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Failed", email_delivery_error: message });
+      return { status: 502, body: { error: message } };
+    }
+    const emailId = body?.messageId ?? null;
+    const sentAt = new Date().toISOString();
+    await finishEmailDelivery(deliveryAttempt.id, "Sent", emailId, null);
+    await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: emailId, email_delivery_error: null });
+    return { status: 200, body: { emailId, emailSentAt: sentAt } };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "The email could not be delivered.";
+    await finishEmailDelivery(deliveryAttempt.id, "Failed", null, message);
+    await updatePaymentEmailState(deliveryPayment.id, { email_delivery_status: "Failed", email_delivery_error: message });
     return { status: 502, body: { error: message } };
   }
-  await finishEmailDelivery(deliveryAttempt.id, "Sent", body?.messageId ?? null, null);
-  return { status: 200, body: { emailId: body?.messageId ?? null } };
 };
 
 export const sendApprovalEmail = (payment, options) => sendEmail(payment, false, options);

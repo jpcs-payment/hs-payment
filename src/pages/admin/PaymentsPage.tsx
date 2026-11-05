@@ -181,24 +181,11 @@ function LegacyPaymentsPage() {
       const paid = await markPayLaterReceived(markId);
       setMarkId(null);
       if (!paid) return;
-      setEmailPayment(paid);
-      try {
-        await sendApprovalEmail(paid);
-        pushToast({
-          tone: "success",
-          title: paid.generateQr ? "Payment received and QR activated" : "Payment received and emailed",
-          message: `The confirmation was sent to ${paid.email}.`,
-        });
-      } catch (error) {
-        pushToast({
-          tone: "error",
-          title: "Payment received, email failed",
-          message:
-            error instanceof Error
-              ? error.message
-              : paid.generateQr ? "The QR is active; retry the email from the payment details." : "Retry the email from the payment details.",
-        });
-      }
+      pushToast({
+        tone: "success",
+        title: paid.generateQr ? "Payment received and QR activated" : "Payment received",
+        message: paid.emailDeliveryStatus === "Sent" ? `The original confirmation was already sent to ${paid.email}.` : "No additional email was sent. Check payment details if the original delivery failed.",
+      });
     } catch (error) {
       pushToast({
         tone: "error",
@@ -431,7 +418,7 @@ function LegacyPaymentsPage() {
         title="Mark Pay Later payment received?"
         description={
           markRecord
-            ? markRecord.generateQr ? `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, activates their QR tickets, and sends the payment confirmation email.` : `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, and sends the payment confirmation email without QR tickets.`
+            ? markRecord.generateQr ? `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, activates their QR tickets, and does not send another email.` : `This confirms the payment for ${getPaymentAttendees(markRecord).map((attendee) => attendee.name).join(", ")}, without sending another email.`
             : ""
         }
         confirmLabel="Mark received"

@@ -134,7 +134,7 @@ export function PaymentMethodsPage() {
         </div>
         <div className="mt-5 grid gap-4 border-t border-line pt-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-end">
           <div><FieldLabel>Multiple attendee names</FieldLabel><button type="button" disabled={settingsLoading} className={`flex min-h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${data.siteSettings.allowMultipleNames ? "border-navy-700 bg-navy-900 text-white" : "border-line bg-white text-slate-500"}`} onClick={toggleMultipleNames}><span>{data.siteSettings.allowMultipleNames ? "Enabled globally" : "Disabled globally"}</span>{data.siteSettings.allowMultipleNames ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
-          <div><FieldLabel required>Maximum names</FieldLabel><Input type="number" min="2" max="10" step="1" value={maxNamesDraft} onChange={(event) => setMaxNamesDraft(Number(event.target.value))} onBlur={saveMaxNames} disabled={settingsLoading || !data.siteSettings.allowMultipleNames} /><p className="mt-1.5 text-[11px] text-slate-400">Used when multiple names are enabled.</p></div>
+          <div><FieldLabel required>Maximum names</FieldLabel><Input type="number" min="2" max="20" step="1" value={maxNamesDraft} onChange={(event) => setMaxNamesDraft(Number(event.target.value))} onBlur={saveMaxNames} disabled={settingsLoading || !data.siteSettings.allowMultipleNames} /><p className="mt-1.5 text-[11px] text-slate-400">Used when multiple names are enabled.</p></div>
         </div>
       </Card>
       <Card className="overflow-hidden">

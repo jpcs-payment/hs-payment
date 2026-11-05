@@ -1,8 +1,19 @@
 import type { PaymentRecord } from "../types";
 import { supabase } from "./supabase";
 
+export class EmailDeliveryError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "EmailDeliveryError";
+    this.status = status;
+  }
+}
+
 interface ApprovalEmailResponse {
   emailId?: string | null;
+  emailSentAt?: string;
 }
 
 const getAuthHeaders = async (): Promise<Record<string, string>> => {
@@ -80,7 +91,7 @@ export async function sendApprovalEmail(payment: PaymentRecord): Promise<Approva
   } catch {
     body = {};
   }
-  if (!response.ok) throw new Error(body.error ?? "The Brevo email could not be sent.");
+  if (!response.ok) throw new EmailDeliveryError(body.error ?? "The Brevo email could not be sent.", response.status);
   return body;
 }
 
@@ -108,6 +119,6 @@ export async function sendPayLaterEmail(payment: PaymentRecord): Promise<Approva
   } catch {
     body = {};
   }
-  if (!response.ok) throw new Error(body.error ?? "The Pay Later email could not be sent.");
+  if (!response.ok) throw new EmailDeliveryError(body.error ?? "The Pay Later email could not be sent.", response.status);
   return body;
 }
