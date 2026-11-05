@@ -4,7 +4,7 @@ import type { LucideIcon } from "lucide-react";
 import { BarChart3, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, ReceiptText, RefreshCw, ScanLine, Search, Settings2, Tags, Trash2, UsersRound } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { formatCurrency } from "../lib/utils";
-import { AdminPageSkeleton, Avatar, Button, Input } from "./ui";
+import { AdminPageSkeleton, Avatar, Button, ConfirmDialog, Input } from "./ui";
 import { OrganizationLogo } from "./OrganizationLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import { BRANDING } from "../lib/branding";
@@ -51,6 +51,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const title = pageTitles.find(([path]) => location.pathname.startsWith(path))?.[1] ?? "Admin";
   const moreActive = mobileMoreNavigation.some((item) => location.pathname.startsWith(item.to));
@@ -77,13 +78,19 @@ export function AppShell() {
     return [...payers, ...payments, ...offerings].slice(0, 8);
   }, [data, searchQuery]);
 
+  const requestLogout = () => {
+    setMoreOpen(false);
+    setSignOutConfirmOpen(true);
+  };
+
   const handleLogout = () => {
+    setSignOutConfirmOpen(false);
     logout();
     navigate("/admin/login", { replace: true });
   };
 
   if (dataLoading) return <div className="min-h-screen bg-mist px-4 py-8 sm:px-6 lg:px-8"><AdminPageSkeleton page={location.pathname} label="Loading admin workspace" /></div>;
-  if (dataError) return <div className="flex min-h-screen items-center justify-center bg-mist px-4"><div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-7 text-center shadow-soft"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-coral">Workspace unavailable</p><h1 className="mt-2 text-xl font-extrabold text-navy-900">The admin data could not load</h1><p className="mt-2 break-words text-sm leading-6 text-slate-500">{dataError}</p><div className="mt-5 flex justify-center gap-2"><Button variant="outline" onClick={() => void retryData()}>Retry</Button><Button variant="ghost" onClick={handleLogout}>Sign out</Button></div></div></div>;
+  if (dataError) return <><div className="flex min-h-screen items-center justify-center bg-mist px-4"><div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-7 text-center shadow-soft"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-coral">Workspace unavailable</p><h1 className="mt-2 text-xl font-extrabold text-navy-900">The admin data could not load</h1><p className="mt-2 break-words text-sm leading-6 text-slate-500">{dataError}</p><div className="mt-5 flex justify-center gap-2"><Button variant="outline" onClick={() => void retryData()}>Retry</Button><Button variant="ghost" onClick={requestLogout}>Sign out</Button></div></div></div><ConfirmDialog open={signOutConfirmOpen} onClose={() => setSignOutConfirmOpen(false)} onConfirm={handleLogout} title="Sign out of admin?" description="Are you sure you want to sign out of the admin workspace?" confirmLabel="Sign out" danger /></>;
 
   const renderSidebar = () => {
     const compact = collapsed;
@@ -102,13 +109,14 @@ export function AppShell() {
           </nav>
         </div>
         <div className="mt-auto shrink-0 p-3">
-          {!compact ? <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-2.5"><Avatar initials={(session?.adminName ?? "AD").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()} color="#245486" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{session?.adminName ?? "JPCS Admin"}</p><p className="truncate text-[10px] text-blue-100/50">{session?.adminEmail ?? "Operations admin"}</p></div><button className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-100/60 transition hover:bg-white/10 hover:text-white" onClick={handleLogout} aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></button></div> : <button className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg text-blue-100/60 transition hover:bg-white/10 hover:text-white" onClick={handleLogout} aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></button>}
+          {!compact ? <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-2.5 py-2.5"><Avatar initials={(session?.adminName ?? "AD").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()} color="#245486" size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{session?.adminName ?? "JPCS Admin"}</p><p className="truncate text-[10px] text-blue-100/50">{session?.adminEmail ?? "Operations admin"}</p></div><button className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-blue-100/60 transition hover:bg-white/10 hover:text-white" onClick={requestLogout} aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></button></div> : <button className="mx-auto flex h-9 w-9 items-center justify-center rounded-lg text-blue-100/60 transition hover:bg-white/10 hover:text-white" onClick={requestLogout} aria-label="Sign out" title="Sign out"><LogOut className="h-4 w-4" /></button>}
         </div>
       </aside>
     );
   };
 
   return (
+    <>
     <div className="admin-shell min-h-screen overflow-x-hidden bg-mist text-ink">
       <div className="flex min-h-screen">
         <div className={`hidden shrink-0 xl:block ${collapsed ? "w-[76px]" : "w-[248px]"}`} />
@@ -124,13 +132,16 @@ export function AppShell() {
             <nav className="fixed bottom-3 left-1/2 z-40 w-[calc(100%-1.5rem)] max-w-md -translate-x-1/2 xl:hidden" aria-label="Admin mobile navigation">
              {moreOpen ? <div className="absolute bottom-[calc(100%+0.75rem)] right-0 w-56 rounded-2xl border border-line bg-white p-2 shadow-float">
                <p className="px-3 py-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">More admin tools</p>
-               <div className="space-y-1">
-                 {mobileMoreNavigation.map((item) => {
-                   const Icon = item.icon;
-                   return <NavLink key={item.to} to={item.to} onClick={() => setMoreOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition ${isActive ? "bg-navy-900 text-white" : "text-navy-800 hover:bg-navy-50"}`}><Icon className="h-4 w-4 shrink-0" />{item.label}</NavLink>;
-                 })}
-               </div>
-             </div> : null}
+                <div className="space-y-1">
+                  {mobileMoreNavigation.map((item) => {
+                    const Icon = item.icon;
+                    return <NavLink key={item.to} to={item.to} onClick={() => setMoreOpen(false)} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-bold transition ${isActive ? "bg-navy-900 text-white" : "text-navy-800 hover:bg-navy-50"}`}><Icon className="h-4 w-4 shrink-0" />{item.label}</NavLink>;
+                  })}
+                </div>
+                <div className="mt-2 border-t border-line pt-2">
+                  <button type="button" onClick={requestLogout} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-xs font-bold text-coral transition hover:bg-red-50"><LogOut className="h-4 w-4 shrink-0" />Sign out</button>
+                </div>
+              </div> : null}
              <div className="rounded-[1.75rem] border border-white/15 bg-navy-900/95 px-2 pt-2 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-float backdrop-blur">
                <div className="grid grid-cols-5 gap-1">
                  {mobilePrimaryNavigation.map((item) => {
@@ -143,6 +154,8 @@ export function AppShell() {
            </nav>
          </div>
       </div>
-    </div>
+       </div>
+       <ConfirmDialog open={signOutConfirmOpen} onClose={() => setSignOutConfirmOpen(false)} onConfirm={handleLogout} title="Sign out of admin?" description="Are you sure you want to sign out of the admin workspace?" confirmLabel="Sign out" danger />
+       </>
   );
 }
