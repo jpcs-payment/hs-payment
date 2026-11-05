@@ -4,7 +4,7 @@ import { Dialog, Button } from "./ui";
 import { formatCurrency, formatDateTime } from "../lib/utils";
 import type { PaymentRecord } from "../types";
 import { BRANDING, createTicketQrValue } from "../lib/branding";
-import { createQrDataUrl } from "../lib/qr";
+import { createBrandedQrDataUrl } from "../lib/qr";
 import { useApp } from "../context/AppContext";
 import { useToast } from "./Toast";
 import { getPaymentAttendees } from "../lib/payment";
@@ -22,7 +22,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
 
   useEffect(() => {
     let cancelled = false;
-    if (!open || !currentPayment || !currentPayment.generateQr) {
+    if (!open || !currentPayment || currentPayment.generateQr === false) {
       setQrDataUrls({});
       setQrError("");
       return () => { cancelled = true; };
@@ -31,7 +31,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
     setQrError("");
     Promise.all(attendees.map(async (attendee) => {
       const value = attendee.ticketQrValue ?? createTicketQrValue(attendee.ticketId ?? "");
-      return [attendee.id, await createQrDataUrl(value)] as const;
+      return [attendee.id, await createBrandedQrDataUrl(value, attendee.name, attendee.ticketId ?? "")] as const;
     })).then((entries) => {
       if (!cancelled) setQrDataUrls(Object.fromEntries(entries));
     }).catch(() => {
@@ -47,7 +47,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
     setSending(true);
     try {
       await sendApprovalEmail(currentPayment);
-      pushToast({ tone: "success", title: "Confirmation email sent", message: currentPayment.generateQr ? `The receipt and ${attendees.length} attendance QR${attendees.length === 1 ? "" : "s"} were sent to ${currentPayment.email}.` : `The confirmation was sent to ${currentPayment.email}.` });
+      pushToast({ tone: "success", title: "Confirmation email sent", message: currentPayment.generateQr !== false ? `The receipt and ${attendees.length} attendance QR${attendees.length === 1 ? "" : "s"} were sent to ${currentPayment.email}.` : `The confirmation was sent to ${currentPayment.email}.` });
     } catch (error) {
       pushToast({ tone: "error", title: "Email delivery failed", message: error instanceof Error ? error.message : "Check the local Brevo configuration and try again." });
     } finally {
@@ -56,7 +56,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
   };
 
   return (
-    <Dialog open={open} onClose={onClose} title="Payment confirmation email" description={currentPayment.generateQr ? "The email includes the attendee list and one QR attachment for every named attendee." : "The email includes the attendee list and payment confirmation."} size="lg">
+    <Dialog open={open} onClose={onClose} title="Payment confirmation email" description={currentPayment.generateQr !== false ? "The email includes the attendee list and one QR attachment for every named attendee." : "The email includes the attendee list and payment confirmation."} size="lg">
       <div className="space-y-5">
         <div className={`flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${deliveryStatus === "Sent" ? "border-emerald-200 bg-emerald-50" : deliveryStatus === "Failed" ? "border-red-200 bg-red-50" : deliveryStatus === "Sending" ? "border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"}`}>
           <div className="flex items-start gap-3">
@@ -70,15 +70,17 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
-          <div className="flex items-center gap-3 border-b border-line bg-mist px-5 py-4"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-900 text-white"><ShieldCheck className="h-4 w-4" /></span><div><p className="text-sm font-extrabold text-navy-900">{BRANDING.systemName}</p><p className="text-[10px] text-slate-400">{BRANDING.fullOrganization}</p></div></div>
-          <div className="space-y-2 border-b border-line px-5 py-4 text-xs"><p className="min-w-0 break-words [overflow-wrap:anywhere]"><span className="mr-2 text-slate-400">To</span><strong className="text-navy-900">{currentPayment.email}</strong></p><p className="min-w-0 break-words [overflow-wrap:anywhere]"><span className="mr-2 text-slate-400">Subject</span><strong className="text-navy-900">Your {BRANDING.organization} {currentPayment.offeringName} confirmation</strong></p></div>
+          <div className="flex items-center gap-3 border-b border-line bg-mist px-5 py-4"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-navy-900 text-white"><ShieldCheck className="h-4 w-4" /></span><div><p className="text-sm font-extrabold text-navy-900">{BRANDING.fullOrganization}</p><p className="text-[10px] text-slate-400">Payment confirmation</p></div></div>
+          <div className="space-y-2 border-b border-line px-5 py-4 text-xs"><p className="min-w-0 break-words [overflow-wrap:anywhere]"><span className="mr-2 text-slate-400">To</span><strong className="text-navy-900">{currentPayment.email}</strong></p><p className="min-w-0 break-words [overflow-wrap:anywhere]"><span className="mr-2 text-slate-400">Subject</span><strong className="text-navy-900">Your {currentPayment.offeringName} payment confirmation | {BRANDING.fullOrganization}</strong></p></div>
           <div className="p-5 sm:p-7">
             <p className="text-sm font-bold text-navy-900">Hi {attendees[0]?.name.split(" ")[0]},</p>
-            <p className="mt-4 text-sm leading-6 text-slate-600">Your payment for <strong className="text-navy-900">{currentPayment.offeringName}</strong> has been confirmed. {currentPayment.generateQr ? `Keep this email and give each attendee their matching QR code at the ${BRANDING.organization} attendance desk.` : "Keep this email and take a screenshot of this confirmation for your records."} The confirmation will be sent to <strong className="text-navy-900">{currentPayment.email}</strong>.</p>
+             <p className="mt-4 text-sm leading-6 text-slate-600">Your payment for <strong className="text-navy-900">{currentPayment.offeringName}</strong> has been confirmed. {currentPayment.generateQr !== false ? "Keep this email and the attached QR code for event check-in." : "Keep this email and take a screenshot of this confirmation for your records."}</p>
+             {currentPayment.generateQr !== false ? <p className="mt-3 text-sm italic leading-6 text-slate-600"><strong>REMINDER:</strong> Please download your QR codes before going to the auditorium because internet access may not be available.</p> : null}
             <div className="my-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><EmailValue label="Reference" value={currentPayment.reference} /><EmailValue label="Receipt" value={currentPayment.receiptNumber ?? "Pending"} /><EmailValue label="Total" value={formatCurrency(currentPayment.amount)} /><EmailValue label="Method" value={currentPayment.method} /></div>
-            <div className="rounded-2xl border border-line bg-mist p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{currentPayment.generateQr ? "Attendees and tickets" : "Attendees"}</p><div className="mt-3 space-y-2">{attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs"><span className="break-words font-semibold text-navy-900">{attendee.name}</span>{currentPayment.generateQr ? <span className="shrink-0 font-mono text-[10px] text-slate-500">{attendee.ticketId}</span> : null}</div>)}</div></div>
-            {currentPayment.generateQr ? <div className="mt-5 grid gap-5 border-t border-dashed border-line pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,320px)] sm:items-start"><div className="space-y-3 text-xs text-slate-500"><p><strong className="text-navy-900">Confirmed:</strong> {formatDateTime(currentPayment.approvedAt ?? currentPayment.submittedAt)}</p><p className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 leading-5 text-navy-800"><Ticket className="mt-0.5 h-4 w-4 shrink-0" />Each attendee has a separate QR attachment. Scan the matching QR at the attendance desk.</p></div><div className="space-y-3">{attendees.map((attendee) => <div key={attendee.id} className="rounded-2xl border border-line bg-white p-3 text-center shadow-soft"><p className="mb-2 break-words text-xs font-bold text-navy-900">{attendee.name}</p>{qrDataUrls[attendee.id] ? <img src={qrDataUrls[attendee.id]} alt={`Attendance QR for ${attendee.name}`} className="mx-auto h-44 w-44" /> : <div className="flex h-44 items-center justify-center text-xs text-slate-400">{qrError || "Generating QR..."}</div>}<p className="mt-2 break-words font-mono text-[10px] font-bold tracking-wide text-navy-900">{attendee.ticketId}</p></div>)}</div></div> : <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-navy-800">Take a screenshot of this confirmation for your records. The confirmation email will contain the payment details and attendee list.</div>}
-          </div>
+             <div className="rounded-2xl border border-line bg-mist p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{currentPayment.generateQr !== false ? "Attendees and tickets" : "Attendees"}</p><div className="mt-3 space-y-2">{attendees.map((attendee) => <div key={attendee.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2 text-xs"><span className="break-words font-semibold text-navy-900">{attendee.name}</span>{currentPayment.generateQr !== false ? <span className="shrink-0 font-mono text-[10px] text-slate-500">{attendee.ticketId}</span> : null}</div>)}</div></div>
+             {currentPayment.generateQr !== false ? <div className="mt-5 grid gap-5 border-t border-dashed border-line pt-5 sm:grid-cols-[minmax(0,1fr)_minmax(0,320px)] sm:items-start"><div className="space-y-3 text-xs text-slate-500"><p><strong className="text-navy-900">Confirmed:</strong> {formatDateTime(currentPayment.approvedAt ?? currentPayment.submittedAt)}</p><p className="flex items-start gap-2 rounded-xl border border-blue-100 bg-blue-50 p-3 leading-5 text-navy-800"><Ticket className="mt-0.5 h-4 w-4 shrink-0" />Each attendee has a separate branded QR attachment. Scan the matching QR at the attendance desk.</p></div><div className="space-y-3">{attendees.map((attendee) => <div key={attendee.id} className="rounded-2xl border border-line bg-white p-3 text-center shadow-soft">{qrDataUrls[attendee.id] ? <img src={qrDataUrls[attendee.id]} alt={`Attendance QR for ${attendee.name}`} className="mx-auto w-full max-w-[260px]" /> : <div className="flex aspect-square items-center justify-center text-xs text-slate-400">{qrError || "Generating QR..."}</div>}</div>)}</div></div> : <div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-navy-800">Take a screenshot of this confirmation for your records. The confirmation email will contain the payment details and attendee list.</div>}
+           </div>
+           <div className="border-t border-line bg-mist px-5 py-4 text-[10px] text-slate-400">JPCS-LCC. Payment Confirmation</div>
         </div>
       </div>
     </Dialog>

@@ -33,6 +33,7 @@ export const initialData: AppData = {
     message: "The payment portal is temporarily closed while we update it. Please check back soon.",
     allowMultipleNames: false,
     maxNames: 10,
+    visibleSchoolLevels: ["Junior High School", "Senior High School", "College"],
   },
   payments: [],
   developers: [],

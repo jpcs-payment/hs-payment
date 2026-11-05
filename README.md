@@ -1,6 +1,6 @@
 # JPCS - LCC Payment and QR Ticketing System
 
-Local React + Vite payment, Supabase data, Brevo email, QR ticket, and attendance system for Junior Philippines Computer Studies.
+Local React + Vite payment, Supabase data, Brevo email, QR ticket, and attendance system for Junior Philippines Computer Society.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_your_key
 SUPABASE_SERVICE_ROLE_KEY=server_only_service_role_key
 BREVO_API_KEY=xkeysib_your_key
 BREVO_FROM_EMAIL=jpcslccpayment@gmail.com
-BREVO_FROM_NAME=JPCS - LCC Payment Portal
+BREVO_FROM_NAME=Junior Philippines Computer Society
 BREVO_REPLY_TO=jpcs.payment@gmail.com
 EMAIL_SERVER_PORT=8787
 ```
@@ -34,7 +34,7 @@ The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BRE
 
 ## Supabase
 
-The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, one payer record per attendee, global public-portal controls with per-payment-type QR generation, proof-only cashless submissions, and 30-day Recently Deleted retention while preserving one payment per email. Apply them in filename order, including `20261102000000_multiple_attendees.sql`, `20261102010000_attendee_payers.sql`, `20261105000000_portal_settings_and_qr.sql`, `20261105010000_recently_deleted_and_proof_only.sql`, `20261105020000_fix_public_settings_safe_update.sql`, and `20261105030000_raise_attendee_limit_and_email_delivery_index.sql`.
+ The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, one payer record per attendee, global public-portal controls with per-payment-type QR generation, proof-only cashless submissions, 30-day Recently Deleted retention, global school-level visibility, and one-email uniqueness. Apply them in filename order, including `20261102000000_multiple_attendees.sql`, `20261102010000_attendee_payers.sql`, `20261105000000_portal_settings_and_qr.sql`, `20261105010000_recently_deleted_and_proof_only.sql`, `20261105020000_fix_public_settings_safe_update.sql`, `20261105030000_raise_attendee_limit_and_email_delivery_index.sql`, and `20261105040000_global_school_level_visibility.sql`.
 
 After authenticating the Supabase CLI with access to the target project:
 

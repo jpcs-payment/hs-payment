@@ -1,8 +1,8 @@
 export const BRANDING = {
   projectName: "JPCS - LCC Payment and QR Ticketing System",
   organization: "JPCS - LCC",
-  fullOrganization: "Junior Philippines Computer Studies",
-  systemName: "JPCS - LCC Payment Portal",
+  fullOrganization: "Junior Philippines Computer Society",
+  systemName: "Payment Portal",
   credits: [
     "Web Developer • John Benedict Javier",
     "QA Tester • Aerol Justine • Ms. Joyce",

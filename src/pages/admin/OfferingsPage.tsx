@@ -211,11 +211,11 @@ function LegacyOfferingsPage() {
     );
     const slug = draft.slug.trim().toLowerCase().replace(/\s+/g, "-");
     const deadline = draft.payLaterDeadlineAt;
-    if (!draft.name.trim() || !slug || !draft.description.trim()) {
+    if (!draft.name.trim() || !slug) {
       pushToast({
         tone: "error",
         title: "Complete the payment type details",
-        message: "Name, slug, and description are required.",
+        message: "Name and slug are required.",
       });
       return;
     }
@@ -526,7 +526,7 @@ function OfferingForm({ draft, updateDraft, updateAmount, updateAllocation, addA
          <div className="flex items-end"><button type="button" className={`flex h-11 w-full items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition ${draft.active ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-line bg-slate-50 text-slate-500"}`} onClick={() => updateDraft("active", !draft.active)}><span>{draft.active ? "Visible on public form" : "Hidden from public form"}</span>{draft.active ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div>
          <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50 p-4"><div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><FieldLabel>Attendance QR generation</FieldLabel><p className="max-w-xl text-xs leading-5 text-navy-800">Generate one attendance QR ticket per named attendee after approval and include it in the confirmation email.</p></div><button type="button" className={`flex h-11 w-full shrink-0 items-center justify-between rounded-xl border px-3.5 text-sm font-bold transition sm:w-56 ${draft.generateQr ? "border-navy-700 bg-navy-900 text-white" : "border-line bg-white text-slate-500"}`} onClick={() => updateDraft("generateQr", !draft.generateQr)}><span>{draft.generateQr ? "Enabled" : "Disabled"}</span>{draft.generateQr ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}</button></div></div>
       </div>
-       <div><FieldLabel required>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Admission payment for the JPCS Bootcamp." /></div>
+       <div><FieldLabel>Description</FieldLabel><Textarea value={draft.description} onChange={(event) => updateDraft("description", event.target.value)} placeholder="Optional payment type details." /></div>
        <OfferingImageField imageUrl={draft.imageUrl} imageDataUrl={draft.imageDataUrl} onUpload={onImageUpload} onClear={onImageClear} />
        <div><FieldLabel required>Payment methods</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{methods.map((method) => <ToggleChoice key={method} label={method} selected={draft.availableMethods.includes(method)} onClick={() => toggleAvailability(method)} />)}</div></div>
       <div><FieldLabel required>Available for school levels</FieldLabel><div className="flex min-w-0 max-w-full flex-wrap gap-2 pb-1">{schoolLevels.map((level) => <ToggleChoice key={level} label={level === "Junior High School" ? "JHS" : level === "Senior High School" ? "SHS" : "College"} title={level} selected={draft.applicableSchoolLevels.includes(level)} onClick={() => toggleSchoolLevel(level)} />)}</div></div>

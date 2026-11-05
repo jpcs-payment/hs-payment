@@ -44,6 +44,7 @@ export interface PublicSiteSettings {
   message: string;
   allowMultipleNames: boolean;
   maxNames: number;
+  visibleSchoolLevels: SchoolLevel[];
 }
 
 export interface PaymentAttendee {

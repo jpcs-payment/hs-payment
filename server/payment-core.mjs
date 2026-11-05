@@ -120,10 +120,14 @@ export async function submitPayment(input, { requestKey } = {}) {
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
     return existingPayment;
   }
-  const settingsResponse = await client.from("hs-site-settings").select("is_open,public_message,allow_multiple_names,max_names").eq("site_key", "public-payment").maybeSingle();
+  const settingsResponse = await client.from("hs-site-settings").select("is_open,public_message,allow_multiple_names,max_names,visible_school_levels").eq("site_key", "public-payment").maybeSingle();
   if (settingsResponse.error) throw settingsResponse.error;
   const siteSettings = settingsResponse.data;
   if (!siteSettings?.is_open) throw new PublicSubmissionError(siteSettings?.public_message || "The payment portal is temporarily closed while we update it. Please check back soon.", 423);
+  const visibleSchoolLevels = Array.isArray(siteSettings.visible_school_levels) && siteSettings.visible_school_levels.length
+    ? siteSettings.visible_school_levels
+    : ["Junior High School", "Senior High School", "College"];
+  if (!visibleSchoolLevels.includes(payment.schoolLevel)) throw new PublicSubmissionError("That school level is not currently available.");
   const maxNames = siteSettings.allow_multiple_names ? Math.min(20, Math.max(2, Number(siteSettings.max_names) || 10)) : 1;
   if (payment.attendeeNames.length > maxNames) throw new PublicSubmissionError(`The payment portal allows at most ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
   await checkSubmissionRateLimit(client, payment.email, requestKey, serviceRoleKey);

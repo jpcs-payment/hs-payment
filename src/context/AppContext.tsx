@@ -133,6 +133,9 @@ const mapSiteSettings = (row?: DbRow | null): PublicSiteSettings => ({
   message: String(row?.public_message ?? defaultPublicSiteMessage),
   allowMultipleNames: Boolean(row?.allow_multiple_names),
   maxNames: Math.min(20, Math.max(1, Number(row?.max_names) || 10)),
+  visibleSchoolLevels: Array.isArray(row?.visible_school_levels)
+    ? schoolLevels.filter((level) => row.visible_school_levels.includes(level))
+    : schoolLevels,
 });
 
 const mapPayer = (row: DbRow): Student => ({
@@ -420,6 +423,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const submitPayment = async (input: NewPaymentInput) => {
     if (!data.siteSettings.isOpen) throw new Error(data.siteSettings.message);
+    if (!data.siteSettings.visibleSchoolLevels.includes(input.schoolLevel)) throw new Error("That school level is not currently available.");
     const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.deletedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
@@ -951,15 +955,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const maxNames = settings.allowMultipleNames
       ? Math.min(20, Math.max(2, requestedMaxNames))
       : Math.min(20, Math.max(1, requestedMaxNames));
+    const visibleSchoolLevels = schoolLevels.filter((level) => settings.visibleSchoolLevels.includes(level));
+    if (!visibleSchoolLevels.length) throw new Error("Keep at least one school level visible on the public form.");
     const { data: row, error } = await client.rpc("hs_update_public_payment_settings", {
       p_is_open: settings.isOpen,
       p_public_message: settings.message.trim(),
       p_allow_multiple_names: settings.allowMultipleNames,
       p_max_names: maxNames,
+      p_visible_school_levels: visibleSchoolLevels,
     });
     if (error) throw error;
     const updatedRow = (Array.isArray(row) ? row[0] : row) as DbRow | undefined;
-    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : { ...settings, maxNames };
+    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : { ...settings, maxNames, visibleSchoolLevels };
     setData((current) => ({ ...current, siteSettings: nextSettings }));
   };
 
