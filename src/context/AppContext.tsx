@@ -927,15 +927,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const savePublicSiteSettings = async (settings: PublicSiteSettings) => {
     const client = requireSupabase();
+    const requestedMaxNames = Number.isFinite(settings.maxNames) ? Math.round(settings.maxNames) : 1;
+    const maxNames = settings.allowMultipleNames
+      ? Math.min(10, Math.max(2, requestedMaxNames))
+      : Math.min(10, Math.max(1, requestedMaxNames));
     const { data: row, error } = await client.rpc("hs_update_public_payment_settings", {
       p_is_open: settings.isOpen,
       p_public_message: settings.message.trim(),
       p_allow_multiple_names: settings.allowMultipleNames,
-      p_max_names: settings.maxNames,
+      p_max_names: maxNames,
     });
     if (error) throw error;
     const updatedRow = (Array.isArray(row) ? row[0] : row) as DbRow | undefined;
-    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : settings;
+    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : { ...settings, maxNames };
     setData((current) => ({ ...current, siteSettings: nextSettings }));
   };
 

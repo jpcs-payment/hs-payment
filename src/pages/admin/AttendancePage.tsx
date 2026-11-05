@@ -52,6 +52,7 @@ export function AttendancePage() {
   const [scanLoading, setScanLoading] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [manualValue, setManualValue] = useState("");
+  const [manualStudentQuery, setManualStudentQuery] = useState("");
   const [result, setResult] = useState<TicketCheckInResult | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [eventFilter, setEventFilter] = useState("All types");
@@ -68,6 +69,14 @@ export function AttendancePage() {
     () => data.payments.flatMap((payment) => getPaymentAttendees(payment).filter((attendee) => isAttendanceEligible(payment, attendee)).map((attendee) => ({ payment, attendee }))),
     [data.payments],
   );
+  const manualStudentEntries = useMemo(() => {
+    const normalizedQuery = manualStudentQuery.trim().toLowerCase();
+    if (!normalizedQuery) return [];
+    return eligiblePayments
+      .filter(({ attendee }) => !attendee.attendedAt)
+      .filter(({ payment, attendee }) => `${attendee.name} ${payment.studentName} ${payment.email} ${payment.reference} ${payment.offeringName}`.toLowerCase().includes(normalizedQuery))
+      .slice(0, 8);
+  }, [eligiblePayments, manualStudentQuery]);
   const events = useMemo(
     () => [
       "All types",
@@ -216,6 +225,11 @@ export function AttendancePage() {
       scanProcessingRef.current = false;
       setScanLoading(false);
     }
+  };
+
+  const handleManualStudentCheckIn = (entry: AttendanceEntry) => {
+    const ticketValue = entry.attendee.ticketId ?? entry.attendee.ticketQrValue;
+    if (ticketValue) void handleScan(ticketValue);
   };
 
   const startScanner = async (requestedFacing = cameraFacingMode, forceFacing = false) => {
@@ -419,10 +433,14 @@ export function AttendancePage() {
             cameraStarting={cameraStarting}
             isScanning={isScanning}
             manualValue={manualValue}
+            manualStudentQuery={manualStudentQuery}
+            manualStudentEntries={manualStudentEntries}
             selectedDevice={selectedDevice}
             scanLoading={scanLoading}
             videoRef={videoRef}
             onManualChange={setManualValue}
+            onManualStudentQueryChange={setManualStudentQuery}
+            onManualStudentCheckIn={handleManualStudentCheckIn}
             onDeviceChange={handleDeviceChange}
             onStart={() => void startScanner()}
             onStop={stopScanner}
@@ -484,10 +502,14 @@ interface ScannerCardProps {
   cameraStarting: boolean;
   isScanning: boolean;
   manualValue: string;
+  manualStudentQuery: string;
+  manualStudentEntries: AttendanceEntry[];
   selectedDevice: string;
   scanLoading: boolean;
   videoRef: RefObject<HTMLVideoElement>;
   onManualChange: (value: string) => void;
+  onManualStudentQueryChange: (value: string) => void;
+  onManualStudentCheckIn: (entry: AttendanceEntry) => void;
   onDeviceChange: (value: string) => void;
   onStart: () => void;
   onStop: () => void;
@@ -498,9 +520,52 @@ function CameraFacingToggle({ value, disabled, onChange }: { value: CameraFacing
   return <div className="grid grid-cols-2 gap-2 rounded-2xl border border-line bg-white p-2 shadow-soft"><button type="button" className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold transition ${value === "environment" ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-navy-50 hover:text-navy-900"}`} onClick={() => onChange("environment")} disabled={disabled} aria-pressed={value === "environment"}><SwitchCamera className="h-4 w-4" />Back camera</button><button type="button" className={`flex min-h-10 items-center justify-center gap-2 rounded-xl px-3 text-xs font-bold transition ${value === "user" ? "bg-navy-900 text-white" : "text-slate-500 hover:bg-navy-50 hover:text-navy-900"}`} onClick={() => onChange("user")} disabled={disabled} aria-pressed={value === "user"}><SwitchCamera className="h-4 w-4" />Front camera</button></div>;
 }
 
-function ScannerCard({ cameraDevices, cameraError, cameraStarting, isScanning, manualValue, selectedDevice, scanLoading, videoRef, onManualChange, onDeviceChange, onStart, onStop, onScan }: ScannerCardProps) {
+function ScannerCard({ cameraDevices, cameraError, cameraStarting, isScanning, manualValue, manualStudentQuery, manualStudentEntries, selectedDevice, scanLoading, videoRef, onManualChange, onManualStudentQueryChange, onManualStudentCheckIn, onDeviceChange, onStart, onStop, onScan }: ScannerCardProps) {
   const cameraActive = isScanning || cameraStarting;
-  return <Card className="overflow-hidden"><div className="border-b border-line bg-navy-900 px-5 py-5 text-white sm:px-6"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">Check-in desk</p><h3 className="mt-1 text-base font-extrabold">Scan attendance QR</h3></div><Camera className="h-5 w-5 text-blue-200" /></div></div><div className="space-y-4 p-5 sm:p-6"><div className="relative aspect-video overflow-hidden rounded-2xl bg-navy-950"><video ref={videoRef} className="h-full w-full object-cover" muted playsInline /><div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-white/35" />{!isScanning ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-navy-950/65 text-center text-white"><ScanLine className="h-8 w-8 text-blue-200" /><p className="text-xs font-semibold">{cameraStarting ? "Starting camera..." : "Camera is ready"}</p></div> : null}</div>{cameraError ? <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-xs leading-5 text-red-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{cameraError}</div> : null}{cameraDevices.length > 1 ? <Select value={selectedDevice} onChange={(event) => onDeviceChange(event.target.value)} disabled={cameraActive} aria-label="Camera device">{cameraDevices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</Select> : null}<div className="flex flex-col gap-2 sm:flex-row"><Button className="flex-1" onClick={onStart} disabled={cameraActive} loading={cameraStarting}><Camera className="h-4 w-4" /> Start camera</Button><Button className="flex-1" variant="outline" onClick={onStop} disabled={!cameraActive}><StopCircle className="h-4 w-4" /> Stop camera</Button></div><div className="border-t border-line pt-4"><FieldLabel>Manual ticket or QR value</FieldLabel><div className="flex gap-2"><Input className="min-w-0" value={manualValue} onChange={(event) => onManualChange(event.target.value)} placeholder="Paste ticket ID or QR text" /><Button variant="secondary" onClick={onScan} disabled={!manualValue.trim()} loading={scanLoading}>Scan</Button></div><p className="mt-2 text-[11px] leading-5 text-slate-400">The camera stays active after a successful scan. Use Stop camera when the check-in desk is closed.</p></div></div></Card>;
+  return (
+    <Card className="overflow-hidden">
+      <div className="border-b border-line bg-navy-900 px-5 py-5 text-white sm:px-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-100/60">Check-in desk</p>
+            <h3 className="mt-1 text-base font-extrabold">Scan attendance QR</h3>
+          </div>
+          <Camera className="h-5 w-5 text-blue-200" />
+        </div>
+      </div>
+      <div className="space-y-4 p-5 sm:p-6">
+        <div className="relative aspect-video overflow-hidden rounded-2xl bg-navy-950">
+          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+          <div className="pointer-events-none absolute inset-8 rounded-2xl border-2 border-white/35" />
+          {!isScanning ? <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-navy-950/65 text-center text-white"><ScanLine className="h-8 w-8 text-blue-200" /><p className="text-xs font-semibold">{cameraStarting ? "Starting camera..." : "Camera is ready"}</p></div> : null}
+        </div>
+        {cameraError ? <div className="flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 p-3 text-xs leading-5 text-red-800"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />{cameraError}</div> : null}
+        {cameraDevices.length > 1 ? <Select value={selectedDevice} onChange={(event) => onDeviceChange(event.target.value)} disabled={cameraActive} aria-label="Camera device">{cameraDevices.map((device, index) => <option key={device.deviceId} value={device.deviceId}>{device.label || `Camera ${index + 1}`}</option>)}</Select> : null}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button className="flex-1" onClick={onStart} disabled={cameraActive} loading={cameraStarting}><Camera className="h-4 w-4" /> Start camera</Button>
+          <Button className="flex-1" variant="outline" onClick={onStop} disabled={!cameraActive}><StopCircle className="h-4 w-4" /> Stop camera</Button>
+        </div>
+        <div className="border-t border-line pt-4">
+          <FieldLabel>Find a student who is not checked in</FieldLabel>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+            <Input className="pl-10" value={manualStudentQuery} onChange={(event) => onManualStudentQueryChange(event.target.value)} placeholder="Search by student name or email" />
+          </div>
+          {manualStudentQuery.trim() ? manualStudentEntries.length ? <div className="mt-2 max-h-52 overflow-y-auto rounded-xl border border-line bg-white">
+            {manualStudentEntries.map(({ payment, attendee }) => <button key={attendee.id} type="button" disabled={scanLoading} onClick={() => onManualStudentCheckIn({ payment, attendee })} className="flex w-full items-center justify-between gap-3 border-b border-line px-3 py-2.5 text-left transition last:border-b-0 hover:bg-navy-50 disabled:cursor-not-allowed disabled:opacity-50">
+              <span className="min-w-0"><span className="block break-words text-xs font-bold text-navy-900">{attendee.name}</span><span className="mt-0.5 block break-words text-[10px] text-slate-500">{payment.email} · {payment.offeringName}</span></span>
+              <span className="shrink-0 text-[10px] font-bold text-navy-700">Check in</span>
+            </button>)}
+          </div> : <p className="mt-2 rounded-xl bg-mist px-3 py-2.5 text-[11px] text-slate-500">No unchecked student matches.</p> : <p className="mt-2 text-[11px] leading-5 text-slate-400">Search an eligible attendee, then click their name to check them in without scanning.</p>}
+        </div>
+        <div className="border-t border-line pt-4">
+          <FieldLabel>Manual ticket or QR value</FieldLabel>
+          <div className="flex gap-2"><Input className="min-w-0" value={manualValue} onChange={(event) => onManualChange(event.target.value)} placeholder="Paste ticket ID or QR text" /><Button variant="secondary" onClick={onScan} disabled={!manualValue.trim()} loading={scanLoading}>Scan</Button></div>
+          <p className="mt-2 text-[11px] leading-5 text-slate-400">The camera stays active after a successful scan. Use Stop camera when the check-in desk is closed.</p>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 function LegacyScannerCard({ cameraDevices, cameraError, cameraStarting, isScanning, manualValue, selectedDevice, scanLoading, videoRef, onManualChange, onDeviceChange, onStart, onStop, onScan }: ScannerCardProps) {

@@ -11,6 +11,19 @@ import type { PaymentMethodConfig } from "../../types";
 
 const methods = ["Cash", "GCash", "MariBank"] as const;
 
+const getSettingsErrorMessage = (error: unknown) => {
+  const message = error instanceof Error && error.message
+    ? error.message
+    : error && typeof error === "object" && "message" in error && typeof error.message === "string"
+      ? error.message
+      : "Try again.";
+  const normalized = message.toLowerCase();
+  if (normalized.includes("hs_update_public_payment_settings") || normalized.includes("hs-site-settings") || normalized.includes("schema cache")) {
+    return "The public settings migration is not available in Supabase. Apply 20261105000000_portal_settings_and_qr.sql, then reload this page.";
+  }
+  return message;
+};
+
 export function PaymentMethodsPage() {
   const { data, savePaymentMethod, savePublicSiteSettings } = useApp();
   const { pushToast } = useToast();
@@ -31,14 +44,18 @@ export function PaymentMethodsPage() {
       await savePublicSiteSettings(nextSettings);
       pushToast({ tone: "success", title: "Public settings saved", message });
     } catch (error) {
-      pushToast({ tone: "error", title: "Could not save public settings", message: error instanceof Error ? error.message : "Try again." });
+      pushToast({ tone: "error", title: "Could not save public settings", message: getSettingsErrorMessage(error) });
     } finally {
       setSettingsLoading(false);
     }
   };
 
   const toggleSiteOpen = () => void updatePortalSettings({ ...data.siteSettings, isOpen: !data.siteSettings.isOpen }, data.siteSettings.isOpen ? "The payment form is now closed for updates." : "The payment form is now open for submissions.");
-  const toggleMultipleNames = () => void updatePortalSettings({ ...data.siteSettings, allowMultipleNames: !data.siteSettings.allowMultipleNames }, data.siteSettings.allowMultipleNames ? "The public form will accept one attendee name." : "The public form can accept multiple attendee names.");
+  const toggleMultipleNames = () => {
+    const allowMultipleNames = !data.siteSettings.allowMultipleNames;
+    const maxNames = allowMultipleNames ? Math.max(2, data.siteSettings.maxNames) : data.siteSettings.maxNames;
+    void updatePortalSettings({ ...data.siteSettings, allowMultipleNames, maxNames }, allowMultipleNames ? "The public form can accept multiple attendee names." : "The public form will accept one attendee name.");
+  };
   const saveMaxNames = () => {
     const maxNames = Number(maxNamesDraft);
     if (!Number.isInteger(maxNames) || maxNames < 2 || maxNames > 10) {
