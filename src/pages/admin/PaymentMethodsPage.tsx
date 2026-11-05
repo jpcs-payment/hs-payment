@@ -12,16 +12,31 @@ import type { PaymentMethodConfig } from "../../types";
 const methods = ["Cash", "GCash", "MariBank"] as const;
 
 const getSettingsErrorMessage = (error: unknown) => {
+  const record = error && typeof error === "object" ? error as Record<string, unknown> : undefined;
   const message = error instanceof Error && error.message
     ? error.message
-    : error && typeof error === "object" && "message" in error && typeof error.message === "string"
-      ? error.message
-      : "Try again.";
-  const normalized = message.toLowerCase();
+    : record && typeof record.message === "string"
+      ? record.message
+      : typeof error === "string"
+        ? error
+        : "";
+  const details = record && typeof record.details === "string" ? record.details : "";
+  const hint = record && typeof record.hint === "string" ? record.hint : "";
+  const code = record && typeof record.code === "string" ? record.code : "";
+  const normalized = `${message} ${details} ${hint}`.toLowerCase();
   if (normalized.includes("hs_update_public_payment_settings") || normalized.includes("hs-site-settings") || normalized.includes("schema cache")) {
     return "The public settings migration is not available in Supabase. Apply 20261105000000_portal_settings_and_qr.sql, then reload this page.";
   }
-  return message;
+  if (normalized.includes("only a registered jpcs admin") || normalized.includes("not authorized")) {
+    return "This Supabase account is not registered as a JPCS admin. Add its exact Auth email to public.\"hs-admins\", then sign out and sign in again.";
+  }
+  if (normalized.includes("permission denied for function") || code === "42501") {
+    return "This admin session cannot execute the settings RPC. Confirm the authenticated RPC grant, then sign out and sign in again.";
+  }
+  if (normalized.includes("jwt expired") || normalized.includes("invalid jwt") || normalized.includes("session missing")) {
+    return "Your admin session has expired. Sign out and sign in again.";
+  }
+  return [message, details, hint].filter(Boolean).join(" ") || (code ? `Supabase returned error ${code}.` : "Supabase returned an empty error. Check the browser console and network response.");
 };
 
 export function PaymentMethodsPage() {
@@ -44,6 +59,7 @@ export function PaymentMethodsPage() {
       await savePublicSiteSettings(nextSettings);
       pushToast({ tone: "success", title: "Public settings saved", message });
     } catch (error) {
+      console.error("Could not save public settings", error);
       pushToast({ tone: "error", title: "Could not save public settings", message: getSettingsErrorMessage(error) });
     } finally {
       setSettingsLoading(false);
