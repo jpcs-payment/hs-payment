@@ -30,11 +30,11 @@ BREVO_REPLY_TO=jpcs.payment@gmail.com
 EMAIL_SERVER_PORT=8787
 ```
 
-The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `BREVO_REPLY_TO`, `VITE_SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` as server/project environment variables. Never commit `.env` or place server secrets in `VITE_` variables.
+The Brevo sender must be verified in Brevo. On Vercel, add `BREVO_API_KEY`, `BREVO_FROM_EMAIL`, `BREVO_FROM_NAME`, `BREVO_REPLY_TO`, `VITE_SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `CRON_SECRET` as server/project environment variables. `CRON_SECRET` protects the daily Recently Deleted purge endpoint. Never commit `.env` or place server secrets in `VITE_` variables.
 
 ## Supabase
 
-The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, one payer record per attendee, and global public-portal controls with per-payment-type QR generation while preserving one payment per email. Apply them in filename order, including `20261102000000_multiple_attendees.sql`, `20261102010000_attendee_payers.sql`, and `20261105000000_portal_settings_and_qr.sql`.
+The migrations are in `supabase/migrations/`. The initial migration creates the `hs-` tables, storage bucket, admin policies, and Film Showing offering. The follow-up migrations add College support, reusable payment offerings, dynamic allocation destinations, Pay Later reservations, payment attribution, secure approval/rejection actions, hardened public payment submission with private proof storage, multiple named attendees with one QR ticket per attendee, one payer record per attendee, global public-portal controls with per-payment-type QR generation, proof-only cashless submissions, and 30-day Recently Deleted retention while preserving one payment per email. Apply them in filename order, including `20261102000000_multiple_attendees.sql`, `20261102010000_attendee_payers.sql`, `20261105000000_portal_settings_and_qr.sql`, and `20261105010000_recently_deleted_and_proof_only.sql`.
 
 After authenticating the Supabase CLI with access to the target project:
 

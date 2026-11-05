@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/purge-recently-deleted",
+      "schedule": "0 3 * * *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/(.*)",

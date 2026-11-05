@@ -20,8 +20,6 @@ export interface PaymentFormState {
   offeringId: string;
   method: PaymentMethod | "";
   paymentMode: PaymentMode;
-  senderAccountName: string;
-  senderReference: string;
   proofImage: string;
 }
 
@@ -36,11 +34,11 @@ const courseSuggestions = ["BS Computer Science", "BS Information Technology", "
 const schoolLevels: SchoolLevel[] = ["Junior High School", "Senior High School", "College"];
 const stepOrder: PaymentStep[] = ["details", "type", "method", "review", "paid"];
 const stepLabels: Record<PaymentStep, string> = {
-  details: "STUDENT DETAILS",
-  type: "PAYMENT TYPE",
-  method: "PAYMENT METHOD",
-  review: "REVIEW PAYMENT",
-  paid: "PAID",
+  details: "01 · STUDENT DETAILS",
+  type: "02 · PAYMENT TYPE",
+  method: "03 · PAYMENT METHOD",
+  review: "04 · REVIEW PAYMENT",
+  paid: "05 · PAID",
 };
 
 const yearsFor = (level: SchoolLevel) => level === "Senior High School" ? seniorYears : level === "College" ? collegeYears : juniorYears;
@@ -51,7 +49,7 @@ const emailAlreadyUsedMessage = "email has been used";
 export function PaymentPage() {
   const { data, submitPayment, sendPayLaterEmail, dataLoading, dataError, retryData } = useApp();
   const { pushToast } = useToast();
-  const activeOfferings = useMemo(() => data.offerings.filter((offering) => offering.active && !offering.archivedAt), [data.offerings]);
+  const activeOfferings = useMemo(() => data.offerings.filter((offering) => offering.active && !offering.deletedAt), [data.offerings]);
   const [form, setForm] = useState<PaymentFormState>({
     email: "",
     attendeeNames: [""],
@@ -62,8 +60,6 @@ export function PaymentPage() {
     offeringId: activeOfferings[0]?.id ?? "",
     method: "",
     paymentMode: "PayNow",
-    senderAccountName: "",
-    senderReference: "",
     proofImage: "",
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -102,9 +98,9 @@ export function PaymentPage() {
       method: nextMethod,
       paymentMode: nextMode,
       attendeeNames: current.attendeeNames.slice(0, maxNames),
-      ...(offeringChanged || methodChanged || modeChanged ? { senderAccountName: "", senderReference: "", proofImage: "" } : {}),
+      ...(offeringChanged || methodChanged || modeChanged ? { proofImage: "" } : {}),
     }));
-    if (offeringChanged || methodChanged || modeChanged) setErrors((current) => ({ ...current, offeringId: undefined, method: undefined, paymentMode: undefined, senderAccountName: undefined, senderReference: undefined, proofImage: undefined }));
+    if (offeringChanged || methodChanged || modeChanged) setErrors((current) => ({ ...current, offeringId: undefined, method: undefined, paymentMode: undefined, proofImage: undefined }));
   }, [availableMethods, eligibleOfferings, form.attendeeNames.length, form.method, form.offeringId, form.paymentMode, maxNames, selectedOffering]);
 
   useEffect(() => {
@@ -114,9 +110,9 @@ export function PaymentPage() {
   const updateForm = <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => {
     setForm((current) => {
       const offeringChanged = key === "offeringId" && current.offeringId !== value;
-      return { ...current, [key]: value, ...(offeringChanged ? { senderAccountName: "", senderReference: "", proofImage: "" } : {}) };
+      return { ...current, [key]: value, ...(offeringChanged ? { proofImage: "" } : {}) };
     });
-    setErrors((current) => ({ ...current, [key]: undefined, ...(key === "offeringId" ? { senderAccountName: undefined, senderReference: undefined, proofImage: undefined } : {}) }));
+    setErrors((current) => ({ ...current, [key]: undefined, ...(key === "offeringId" ? { proofImage: undefined } : {}) }));
   };
 
   const updateAttendeeName = (index: number, value: string) => {
@@ -140,8 +136,8 @@ export function PaymentPage() {
   };
 
   const changeMethod = (method: PaymentMethod) => {
-    setForm((current) => ({ ...current, method, paymentMode: "PayNow", senderAccountName: "", senderReference: "", proofImage: "" }));
-    setErrors((current) => ({ ...current, method: undefined, paymentMode: undefined, senderAccountName: undefined, senderReference: undefined, proofImage: undefined }));
+    setForm((current) => ({ ...current, method, paymentMode: "PayNow", proofImage: "" }));
+    setErrors((current) => ({ ...current, method: undefined, paymentMode: undefined, proofImage: undefined }));
   };
 
   const changeSchoolLevel = (level: SchoolLevel) => {
@@ -150,7 +146,7 @@ export function PaymentPage() {
   };
 
   const resetForm = () => {
-    setForm({ email: "", attendeeNames: [""], schoolLevel: "Junior High School", yearLevel: juniorYears[0], strand: "", course: "", offeringId: activeOfferings[0]?.id ?? "", method: "", paymentMode: "PayNow", senderAccountName: "", senderReference: "", proofImage: "" });
+    setForm({ email: "", attendeeNames: [""], schoolLevel: "Junior High School", yearLevel: juniorYears[0], strand: "", course: "", offeringId: activeOfferings[0]?.id ?? "", method: "", paymentMode: "PayNow", proofImage: "" });
     setErrors({});
     setSubmittedPayment(null);
     setSubmissionTime(new Date());
@@ -185,11 +181,9 @@ export function PaymentPage() {
       if (!payLaterAvailable) nextErrors.paymentMode = "Pay Later is not available for this method.";
       if (!selectedOffering?.payLaterDeadlineAt || isOverdue(selectedOffering.payLaterDeadlineAt)) nextErrors.paymentMode = "The Pay Later deadline has passed.";
     } else if (isCashless) {
-      if (!form.senderAccountName.trim()) nextErrors.senderAccountName = "Enter the sender account name.";
-      if (!form.senderReference.trim()) nextErrors.senderReference = "Enter the account number or reference.";
       if (!form.proofImage) nextErrors.proofImage = "Upload proof of payment for cashless payments.";
     }
-    setErrors((current) => ({ ...current, method: nextErrors.method, paymentMode: nextErrors.paymentMode, senderAccountName: nextErrors.senderAccountName, senderReference: nextErrors.senderReference, proofImage: nextErrors.proofImage }));
+    setErrors((current) => ({ ...current, method: nextErrors.method, paymentMode: nextErrors.paymentMode, proofImage: nextErrors.proofImage }));
     return Object.keys(nextErrors).length === 0;
   };
 
@@ -242,8 +236,6 @@ export function PaymentPage() {
         method: form.method,
         paymentMode: form.paymentMode,
         paymentDeadlineAt: isPayLater ? selectedOffering.payLaterDeadlineAt : undefined,
-        senderAccountName: form.senderAccountName.trim() || undefined,
-        senderReference: form.senderReference.trim() || undefined,
         proofImage: isPayLater ? undefined : form.proofImage || undefined,
       });
       setSubmittedPayment(payment);
@@ -331,7 +323,7 @@ export function PaymentPage() {
 function StepIndicator({ currentStep }: { currentStep: PaymentStep }) {
   const currentIndex = stepOrder.indexOf(currentStep);
   const progress = `${currentIndex + 1} of ${stepOrder.length}`;
-  return <nav aria-label="Payment progress" className="rounded-2xl border border-line bg-white px-4 py-3 shadow-soft sm:px-5"><div className="flex items-center justify-between gap-4"><p className="min-w-0 truncate text-sm font-extrabold text-navy-900">{stepLabels[currentStep]}</p><span className="shrink-0 rounded-full bg-navy-900 px-3 py-1 text-[10px] font-extrabold text-white" aria-current="step">{progress}</span></div><div className="mt-3 h-1.5 overflow-hidden rounded-full bg-navy-50" role="progressbar" aria-valuemin={1} aria-valuemax={stepOrder.length} aria-valuenow={currentIndex + 1} aria-label={`Step ${progress}`}><span className="block h-full rounded-full bg-navy-900 transition-all" style={{ width: `${((currentIndex + 1) / stepOrder.length) * 100}%` }} /></div><p className="sr-only" aria-live="polite">Current step: {stepLabels[currentStep]}, {progress}</p></nav>;
+  return <nav aria-label="Payment progress" className="rounded-2xl border border-line bg-white px-4 py-3 shadow-soft sm:px-5"><p className="text-sm font-extrabold text-navy-900">{stepLabels[currentStep]}</p><div className="mt-2 flex items-center gap-3"><div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-navy-50" role="progressbar" aria-valuemin={1} aria-valuemax={stepOrder.length} aria-valuenow={currentIndex + 1} aria-label={`Step ${progress}`}><span className="block h-full rounded-full bg-navy-900 transition-all" style={{ width: `${((currentIndex + 1) / stepOrder.length) * 100}%` }} /></div><span className="shrink-0 rounded-full bg-navy-900 px-3 py-1 text-[10px] font-extrabold text-white" aria-current="step">{progress}</span></div><p className="sr-only" aria-live="polite">Current step: {stepLabels[currentStep]}, {progress}</p></nav>;
 }
 
 function SiteClosedCard({ message }: { message: string }) {
@@ -352,7 +344,7 @@ function PaymentTypeStep({ offerings, selectedOffering, schoolLevel, error, onSe
 }
 
 function PaymentMethodStep({ form, availableMethods, method, methodConfig, paymentMode, selectedOffering, totalAmount, attendeeCount, isPayLater, isCashless, errors, proofImage, onMethodChange, onModeChange, onChange, onProofUpload, onProofClear }: { form: PaymentFormState; availableMethods: PaymentMethod[]; method: PaymentMethod | ""; methodConfig?: { id: PaymentMethod; accountName: string; accountNumber: string; instructions: string; qrImage?: string }; paymentMode: PaymentMode; selectedOffering?: PaymentOffering; totalAmount: number; attendeeCount: number; isPayLater: boolean; isCashless: boolean; errors: FormErrors; proofImage: string; onMethodChange: (method: PaymentMethod) => void; onModeChange: (mode: PaymentMode) => void; onChange: <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => void; onProofUpload: (event: ChangeEvent<HTMLInputElement>) => void; onProofClear: () => void }) {
-  return <FormSection icon={WalletCards} eyebrow="03 · Payment method" title="Select how you will pay" description={selectedOffering ? `Total due for ${attendeeCount} attendee${attendeeCount === 1 ? "" : "s"}: ${formatCurrency(totalAmount)}.` : "Choose a payment type first."}><div className="grid gap-3 sm:grid-cols-3">{availableMethods.map((availableMethod) => { const config = methodConfig?.id === availableMethod ? methodConfig : undefined; return <MethodOption key={availableMethod} method={availableMethod} accountName={config?.accountName ?? ""} logo={paymentMethodLogos[availableMethod]} selected={method === availableMethod} onClick={() => onMethodChange(availableMethod)} />; })}</div>{!availableMethods.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">No payment methods are enabled for this offering.</p> : null}{errors.method ? <p className="mt-2 text-xs font-semibold text-coral">{errors.method}</p> : null}{methodConfig ? <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50/60 p-4"><div className="flex items-start gap-3"><span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-sm ring-1 ring-line">{paymentMethodLogos[methodConfig.id] ? <img src={paymentMethodLogos[methodConfig.id]} alt={`${methodConfig.id} logo`} className="h-full w-full rounded-xl object-contain" /> : <CircleHelp className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="break-words text-xs font-bold text-navy-900">{methodConfig.accountName}</p><p className="mt-1 break-words text-xs font-semibold text-navy-800">{methodConfig.accountNumber}</p><p className="mt-2 break-words text-[11px] leading-5 text-slate-500">{methodConfig.instructions}</p>{methodConfig.qrImage ? <img src={methodConfig.qrImage} alt={`${methodConfig.id} payment QR`} className="mt-4 max-h-40 w-full rounded-xl bg-white object-contain p-2" /> : null}</div></div><div className="mt-5 rounded-xl bg-white p-3 ring-1 ring-line"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Total to send or pay</p><p className="mt-1 text-xl font-extrabold text-navy-900">{formatCurrency(totalAmount)}</p><p className="mt-1 text-[11px] text-slate-500">{formatCurrency(selectedOffering?.amount ?? 0)} per attendee · {attendeeCount} attendee{attendeeCount === 1 ? "" : "s"}</p></div><div className="mt-5"><FieldLabel>Payment timing</FieldLabel><div className="grid gap-2 sm:grid-cols-2"><ModeOption mode="PayNow" selected={paymentMode === "PayNow"} onClick={() => onModeChange("PayNow")} /><ModeOption mode="PayLater" selected={paymentMode === "PayLater"} disabled={!payLaterAvailableFor(selectedOffering, method)} deadline={selectedOffering?.payLaterDeadlineAt} onClick={() => onModeChange("PayLater")} /></div>{errors.paymentMode ? <p className="mt-1.5 text-xs font-semibold text-coral">{errors.paymentMode}</p> : null}</div></div> : null}{isCashless && !isPayLater ? <div className="mt-5 grid gap-5 sm:grid-cols-2"><FormField label="Sender account name" required error={errors.senderAccountName}><Input value={form.senderAccountName} onChange={(event) => onChange("senderAccountName", event.target.value)} placeholder="Name shown on the transfer" autoComplete="name" /></FormField><FormField label="Account number or reference" required error={errors.senderReference}><Input value={form.senderReference} onChange={(event) => onChange("senderReference", event.target.value)} placeholder="Transaction reference" /></FormField><ProofUpload image={proofImage} error={errors.proofImage} onUpload={onProofUpload} onClear={onProofClear} /></div> : null}</FormSection>;
+  return <FormSection icon={WalletCards} eyebrow="03 · Payment method" title="Select how you will pay" description={selectedOffering ? `Total due for ${attendeeCount} attendee${attendeeCount === 1 ? "" : "s"}: ${formatCurrency(totalAmount)}.` : "Choose a payment type first."}><div className="grid gap-3 sm:grid-cols-3">{availableMethods.map((availableMethod) => { const config = methodConfig?.id === availableMethod ? methodConfig : undefined; return <MethodOption key={availableMethod} method={availableMethod} accountName={config?.accountName ?? ""} logo={paymentMethodLogos[availableMethod]} selected={method === availableMethod} onClick={() => onMethodChange(availableMethod)} />; })}</div>{!availableMethods.length ? <p className="mt-3 rounded-xl bg-amber-50 p-3 text-xs font-semibold text-amber-800">No payment methods are enabled for this offering.</p> : null}{errors.method ? <p className="mt-2 text-xs font-semibold text-coral">{errors.method}</p> : null}{methodConfig ? <div className="mt-5 rounded-2xl border border-navy-100 bg-navy-50/60 p-4"><div className="flex items-start gap-3"><span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-white p-1 shadow-sm ring-1 ring-line">{paymentMethodLogos[methodConfig.id] ? <img src={paymentMethodLogos[methodConfig.id]} alt={`${methodConfig.id} logo`} className="h-full w-full rounded-xl object-contain" /> : <CircleHelp className="h-4 w-4" />}</span><div className="min-w-0 flex-1"><p className="break-words text-xs font-bold text-navy-900">{methodConfig.accountName}</p><p className="mt-1 break-words text-xs font-semibold text-navy-800">{methodConfig.accountNumber}</p><p className="mt-2 break-words text-[11px] leading-5 text-slate-500">{methodConfig.instructions}</p>{methodConfig.qrImage ? <img src={methodConfig.qrImage} alt={`${methodConfig.id} payment QR`} className="mt-4 max-h-40 w-full rounded-xl bg-white object-contain p-2" /> : null}</div></div><div className="mt-5 rounded-xl bg-white p-3 ring-1 ring-line"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Total to send or pay</p><p className="mt-1 text-xl font-extrabold text-navy-900">{formatCurrency(totalAmount)}</p><p className="mt-1 text-[11px] text-slate-500">{formatCurrency(selectedOffering?.amount ?? 0)} per attendee · {attendeeCount} attendee{attendeeCount === 1 ? "" : "s"}</p></div><div className="mt-5"><FieldLabel>Payment timing</FieldLabel><div className="grid gap-2 sm:grid-cols-2"><ModeOption mode="PayNow" selected={paymentMode === "PayNow"} onClick={() => onModeChange("PayNow")} /><ModeOption mode="PayLater" selected={paymentMode === "PayLater"} disabled={!payLaterAvailableFor(selectedOffering, method)} deadline={selectedOffering?.payLaterDeadlineAt} onClick={() => onModeChange("PayLater")} /></div>{errors.paymentMode ? <p className="mt-1.5 text-xs font-semibold text-coral">{errors.paymentMode}</p> : null}</div></div> : null}{isCashless && !isPayLater ? <div className="mt-5"><ProofUpload image={proofImage} error={errors.proofImage} onUpload={onProofUpload} onClear={onProofClear} /></div> : null}</FormSection>;
 }
 
 function payLaterAvailableFor(offering: PaymentOffering | undefined, method: PaymentMethod | "") {
@@ -361,7 +353,7 @@ function payLaterAvailableFor(offering: PaymentOffering | undefined, method: Pay
 
 function ReviewPaymentStep({ form, selectedOffering, totalAmount, isPayLater, summarySchoolDetails, submissionTime }: { form: PaymentFormState; selectedOffering?: PaymentOffering; totalAmount: number; isPayLater: boolean; summarySchoolDetails: string; submissionTime: Date }) {
   const names = form.attendeeNames.map((name) => name.trim()).filter(Boolean);
-  return <FormSection icon={FileImage} eyebrow="04 · Review payment" title="Check everything before submitting" description="Review the attendee list, total amount, and payment details before sending."><div className="rounded-2xl bg-mist p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{selectedOffering?.name}</p><p className="mt-1 break-words text-xs text-slate-500">{form.method} · {isPayLater ? "Pay Later" : "Pay Now"} · {formatDateTime(submissionTime)}</p></div><div className="shrink-0 text-right"><p className="text-lg font-extrabold text-navy-900">{formatCurrency(totalAmount)}</p><p className="text-[10px] text-slate-400">{formatCurrency(selectedOffering?.amount ?? 0)} × {names.length}</p></div></div></div><div className="mt-5 rounded-2xl border border-line p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Attendees</p><ol className="mt-3 space-y-2">{names.map((name, index) => <li key={`${name}-${index}`} className="flex items-center gap-3 text-sm font-semibold text-navy-900"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-[10px] text-navy-700">{index + 1}</span><span className="break-words">{name}</span></li>)}</ol></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><ReviewLine label="Email" value={form.email} /><ReviewLine label="School details" value={summarySchoolDetails} /><ReviewLine label="Status after submission" value={isPayLater ? "Not Paid Yet" : "Pending admin review"} />{isPayLater ? <ReviewLine label="Deadline" value={selectedOffering?.payLaterDeadlineAt ? formatManilaDateTime(selectedOffering.payLaterDeadlineAt) : "-"} /> : <ReviewLine label="Reference" value={form.senderReference || "Cashier reference"} />}</div>{form.proofImage && !isPayLater ? <img src={form.proofImage} alt="Proof preview" className="mt-5 max-h-48 w-full rounded-xl border border-line object-contain bg-slate-50 p-2" /> : null}<div className="mt-5 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-navy-800"><FileImage className="mt-0.5 h-4 w-4 shrink-0" /><span>{isPayLater ? "Your reservation will be saved as Not Paid Yet. A separate attendance QR will be emailed for every attendee." : "Your payment will be saved as Pending and reviewed by the JPCS admin team. Each attendee receives a QR after approval."}</span></div></FormSection>;
+  return <FormSection icon={FileImage} eyebrow="04 · Review payment" title="Check everything before submitting" description="Review the attendee list, total amount, and payment details before sending."><div className="rounded-2xl bg-mist p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{selectedOffering?.name}</p><p className="mt-1 break-words text-xs text-slate-500">{form.method} · {isPayLater ? "Pay Later" : "Pay Now"} · {formatDateTime(submissionTime)}</p></div><div className="shrink-0 text-right"><p className="text-lg font-extrabold text-navy-900">{formatCurrency(totalAmount)}</p><p className="text-[10px] text-slate-400">{formatCurrency(selectedOffering?.amount ?? 0)} × {names.length}</p></div></div></div><div className="mt-5 rounded-2xl border border-line p-4"><p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">Attendees</p><ol className="mt-3 space-y-2">{names.map((name, index) => <li key={`${name}-${index}`} className="flex items-center gap-3 text-sm font-semibold text-navy-900"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-[10px] text-navy-700">{index + 1}</span><span className="break-words">{name}</span></li>)}</ol></div><div className="mt-5 grid gap-4 text-sm sm:grid-cols-2"><ReviewLine label="Email" value={form.email} /><ReviewLine label="School details" value={summarySchoolDetails} /><ReviewLine label="Status after submission" value={isPayLater ? "Not Paid Yet" : "Pending admin review"} />{isPayLater ? <ReviewLine label="Deadline" value={selectedOffering?.payLaterDeadlineAt ? formatManilaDateTime(selectedOffering.payLaterDeadlineAt) : "-"} /> : null}</div>{form.proofImage && !isPayLater ? <img src={form.proofImage} alt="Proof preview" className="mt-5 max-h-48 w-full rounded-xl border border-line object-contain bg-slate-50 p-2" /> : null}<div className="mt-5 flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3 text-xs leading-5 text-navy-800"><FileImage className="mt-0.5 h-4 w-4 shrink-0" /><span>{isPayLater ? "Your reservation will be saved as Not Paid Yet. A separate attendance QR will be emailed for every attendee." : "Your payment will be saved as Pending and reviewed by the JPCS admin team. Each attendee receives a QR after approval."}</span></div></FormSection>;
 }
 
 function CapsuleOption({ label, title, selected, onClick }: { label: string; title?: string; selected: boolean; onClick: () => void }) {

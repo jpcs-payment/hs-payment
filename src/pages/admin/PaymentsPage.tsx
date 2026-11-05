@@ -648,14 +648,6 @@ function PaymentDetails({
             value={formatManilaDateTime(payment.paymentDeadlineAt)}
           />
         ) : null}
-        <Detail
-          label="Sender account name"
-          value={payment.senderAccountName ?? "Not provided"}
-        />
-        <Detail
-          label="Account / cashier reference"
-          value={payment.senderReference ?? "Not provided"}
-        />
       </div>
       <div className="rounded-2xl border border-line bg-mist p-4">
         <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">{payment.generateQr ? "Attendees and QR tickets" : "Attendees"}</p>

@@ -45,16 +45,16 @@ export function PayersPage() {
 }
 
 function PayersWorkspace() {
-  const { data, archivePayer } = useApp();
+  const { data, movePayerToRecentlyDeleted } = useApp();
   const { pushToast } = useToast();
   const [query, setQuery] = useState("");
   const [level, setLevel] =
     useState<(typeof levelFilters)[number]>("All levels");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [archiveId, setArchiveId] = useState<string | null>(null);
-  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const activeStudents = data.students.filter((student) => !student.archivedAt);
+  const activeStudents = data.students.filter((student) => !student.deletedAt);
   const studentsWithPayments = activeStudents.filter((student) =>
     data.payments.some((payment) => paymentBelongsToPayer(payment, student.id)),
   ).length;
@@ -87,8 +87,8 @@ function PayersWorkspace() {
   const selectedStudent = selectedId
     ? (activeStudents.find((student) => student.id === selectedId) ?? null)
     : null;
-  const archiveStudent = archiveId
-    ? (data.students.find((student) => student.id === archiveId) ?? null)
+  const deletedStudent = deleteId
+    ? (data.students.find((student) => student.id === deleteId) ?? null)
     : null;
   const pageCount = getPageCount(filteredStudents.length, PAGE_SIZE);
   const visibleStudents = getPageItems(filteredStudents, page, PAGE_SIZE);
@@ -117,27 +117,27 @@ function PayersWorkspace() {
   });
   const exportPayers = () => downloadCsv(`jpcs-payers-${new Date().toISOString().slice(0, 10)}.csv`, payerExportHeaders, payerExportRows());
   const exportPayersPdf = () => downloadPdf({ filename: `jpcs-payers-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Payers", subtitle: `${activeStudents.length} active payer records`, headers: payerExportHeaders, rows: payerExportRows(), orientation: "landscape" });
-  const handleArchive = async () => {
-    if (!archiveId) return;
-    setArchiveLoading(true);
+  const moveToRecentlyDeleted = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
     try {
-      await archivePayer(archiveId);
-      setArchiveId(null);
-      if (selectedId === archiveId) setSelectedId(null);
+      await movePayerToRecentlyDeleted(deleteId);
+      setDeleteId(null);
+      if (selectedId === deleteId) setSelectedId(null);
       pushToast({
         tone: "success",
-        title: "Payer archived",
+        title: "Payer moved to Recently Deleted",
         message:
-          "The payer is hidden from active lists and the public payment flow.",
+          "The payer is hidden from the active workspace and will be permanently deleted after 30 days unless restored.",
       });
     } catch (error) {
       pushToast({
         tone: "error",
-        title: "Could not archive payer",
+        title: "Could not move payer",
         message: error instanceof Error ? error.message : "Try again.",
       });
     } finally {
-      setArchiveLoading(false);
+      setDeleteLoading(false);
     }
   };
 
@@ -232,12 +232,12 @@ function PayersWorkspace() {
           </div>
           <div className="divide-y divide-line">
             {visibleStudents.map((student) => (
-              <PayerArchiveRow
+              <PayerActiveRow
                 key={student.id}
                 student={student}
                 payments={paymentsForPayer(data.payments, student.id)}
                 onView={() => setSelectedId(student.id)}
-                onArchive={() => setArchiveId(student.id)}
+                onMoveToRecentlyDeleted={() => setDeleteId(student.id)}
               />
             ))}
           </div>
@@ -275,27 +275,27 @@ function PayersWorkspace() {
         ) : null}
       </Dialog>
       <ConfirmDialog
-        open={Boolean(archiveId)}
-        onClose={() => setArchiveId(null)}
-        onConfirm={() => void handleArchive()}
-        title="Archive payer?"
+        open={Boolean(deleteId)}
+        onClose={() => setDeleteId(null)}
+        onConfirm={() => void moveToRecentlyDeleted()}
+        title="Move payer to Recently Deleted?"
         description={
-          archiveStudent
-            ? `This hides ${archiveStudent.name} from active payer lists and the public payment flow. Existing payment records remain unchanged.`
-            : "The payer will be hidden from active lists."
+          deletedStudent
+            ? `This hides ${deletedStudent.name} from the active workspace and public payment flow. Existing records remain disconnected until the payer is restored or permanently deleted.`
+            : "The payer will be hidden from the active workspace."
         }
-        confirmLabel="Archive payer"
+        confirmLabel="Move to Recently Deleted"
         danger
-        loading={archiveLoading}
+        loading={deleteLoading}
       />
     </div>
   );
 }
 
-function PayerArchiveRow({ student, payments, onView, onArchive }: { student: Student; payments: PaymentRecord[]; onView: () => void; onArchive: () => void }) {
+function PayerActiveRow({ student, payments, onView, onMoveToRecentlyDeleted }: { student: Student; payments: PaymentRecord[]; onView: () => void; onMoveToRecentlyDeleted: () => void }) {
   const latest = getLatestPayment(payments, student.id);
   const color = student.schoolLevel === "Junior High School" ? "#0e9f78" : "#163A63";
-  return <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1.6fr)_180px_150px_120px_150px] md:items-center md:gap-4 md:px-6"><div className="flex min-w-0 items-center gap-3"><Avatar initials={student.avatar} color={color} size="sm" /><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{student.name}</p><p className="break-words text-[11px] text-slate-400 [overflow-wrap:anywhere]">{student.email}</p></div></div><div className="flex items-center justify-between text-xs text-slate-500 md:block"><span className="mr-2 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">School details</span><span className="break-words">{student.schoolLevel}<br /><span className="text-[10px] text-slate-400">{student.yearLevel}{student.strand ? ` · ${student.strand}` : ""}{student.course ? ` · ${student.course}` : ""}</span></span></div><div className="flex items-center justify-between text-xs font-semibold text-navy-900 md:block"><span className="mr-2 text-[10px] font-normal uppercase tracking-wide text-slate-400 md:hidden">Payments</span>{payments.length} {payments.length === 1 ? "payment" : "payments"}</div><div className="flex items-center justify-between md:block"><span className="mr-2 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Latest</span>{latest ? <StatusBadge status={latest.status} /> : <span className="text-xs text-slate-400">No activity</span>}</div><div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={onView}>View <ChevronRight className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="sm" className="text-coral hover:text-coral" onClick={onArchive}>Archive</Button></div></div>;
+  return <div className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1.6fr)_180px_150px_120px_150px] md:items-center md:gap-4 md:px-6"><div className="flex min-w-0 items-center gap-3"><Avatar initials={student.avatar} color={color} size="sm" /><div className="min-w-0"><p className="break-words text-sm font-bold text-navy-900">{student.name}</p><p className="break-words text-[11px] text-slate-400 [overflow-wrap:anywhere]">{student.email}</p></div></div><div className="flex items-center justify-between text-xs text-slate-500 md:block"><span className="mr-2 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">School details</span><span className="break-words">{student.schoolLevel}<br /><span className="text-[10px] text-slate-400">{student.yearLevel}{student.strand ? ` · ${student.strand}` : ""}{student.course ? ` · ${student.course}` : ""}</span></span></div><div className="flex items-center justify-between text-xs font-semibold text-navy-900 md:block"><span className="mr-2 text-[10px] font-normal uppercase tracking-wide text-slate-400 md:hidden">Payments</span>{payments.length} {payments.length === 1 ? "payment" : "payments"}</div><div className="flex items-center justify-between md:block"><span className="mr-2 text-[10px] uppercase tracking-wide text-slate-400 md:hidden">Latest</span>{latest ? <StatusBadge status={latest.status} /> : <span className="text-xs text-slate-400">No activity</span>}</div><div className="flex justify-end gap-2"><Button variant="ghost" size="sm" onClick={onView}>View <ChevronRight className="h-3.5 w-3.5" /></Button><Button variant="ghost" size="sm" className="text-coral hover:text-coral" onClick={onMoveToRecentlyDeleted}>Move to Recently Deleted</Button></div></div>;
 }
 
 function PayerRow({ student, payments, onView }: { student: Student; payments: PaymentRecord[]; onView: () => void }) {

@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from "react";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { Banknote, Check, Download, ImagePlus, QrCode, Save, Settings2, ToggleLeft, ToggleRight, WalletCards, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { Card, Button, Dialog, FieldLabel, Input, Textarea } from "../../components/ui";
@@ -18,8 +18,12 @@ export function PaymentMethodsPage() {
   const [loading, setLoading] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [maxNamesDraft, setMaxNamesDraft] = useState(data.siteSettings.maxNames);
-  const activeTypes = data.offerings.filter((item) => item.active && !item.archivedAt);
+  const activeTypes = data.offerings.filter((item) => item.active && !item.deletedAt);
   const type = activeTypes[0];
+
+  useEffect(() => {
+    setMaxNamesDraft(data.siteSettings.maxNames);
+  }, [data.siteSettings.maxNames]);
 
   const updatePortalSettings = async (nextSettings: typeof data.siteSettings, message: string) => {
     setSettingsLoading(true);

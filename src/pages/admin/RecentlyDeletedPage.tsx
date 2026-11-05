@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Archive, Layers3, RotateCcw, Trash2, UsersRound } from "lucide-react";
+import { Layers3, RotateCcw, Trash2, UsersRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Pagination } from "../../components/Pagination";
 import { Button, Card, ConfirmDialog } from "../../components/ui";
@@ -9,8 +9,14 @@ import { getPageCount, getPageItems } from "../../lib/pagination";
 import { formatDateTime } from "../../lib/utils";
 
 const PAGE_SIZE = 10;
+const formatDeletionDeadline = (deletedAt?: string) => {
+  if (!deletedAt) return "30 days after deletion";
+  const deadline = new Date(deletedAt);
+  deadline.setDate(deadline.getDate() + 30);
+  return formatDateTime(deadline.toISOString());
+};
 
-export function ArchivePage() {
+export function RecentlyDeletedPage() {
   const {
     data,
     restorePayer,
@@ -25,19 +31,19 @@ export function ArchivePage() {
   const [deletePayerId, setDeletePayerId] = useState<string | null>(null);
   const [deleteOfferingId, setDeleteOfferingId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
-  const archivedPayers = data.students.filter((student) => student.archivedAt);
-  const archivedTypes = data.offerings.filter(
-    (offering) => offering.archivedAt,
+  const deletedPayers = data.students.filter((student) => student.deletedAt);
+  const deletedTypes = data.offerings.filter(
+    (offering) => offering.deletedAt,
   );
-  const payerPageCount = getPageCount(archivedPayers.length, PAGE_SIZE);
-  const typePageCount = getPageCount(archivedTypes.length, PAGE_SIZE);
-  const visiblePayers = getPageItems(archivedPayers, payerPage, PAGE_SIZE);
-  const visibleTypes = getPageItems(archivedTypes, typePage, PAGE_SIZE);
+  const payerPageCount = getPageCount(deletedPayers.length, PAGE_SIZE);
+  const typePageCount = getPageCount(deletedTypes.length, PAGE_SIZE);
+  const visiblePayers = getPageItems(deletedPayers, payerPage, PAGE_SIZE);
+  const visibleTypes = getPageItems(deletedTypes, typePage, PAGE_SIZE);
   const payerToDelete = deletePayerId
-    ? (archivedPayers.find((payer) => payer.id === deletePayerId) ?? null)
+    ? (deletedPayers.find((payer) => payer.id === deletePayerId) ?? null)
     : null;
   const offeringToDelete = deleteOfferingId
-    ? (archivedTypes.find((offering) => offering.id === deleteOfferingId) ?? null)
+    ? (deletedTypes.find((offering) => offering.id === deleteOfferingId) ?? null)
     : null;
 
   useEffect(() => {
@@ -114,17 +120,17 @@ export function ArchivePage() {
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
-      <div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Archive className="h-5 w-5" /></span><h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Archive</h2></div>
-      <ArchiveSection
-        title="Archived payers"
-        icon={UsersRound}
-        empty="No archived payers."
-        count={archivedPayers.length}
+      <div><div className="flex items-center gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-navy-50 text-navy-700"><Trash2 className="h-5 w-5" /></span><h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Recently Deleted</h2></div><p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">Deleted payers and payment types are disconnected from the active workspace. Restore them within 30 days or they are permanently deleted automatically.</p></div>
+       <DeletedSection
+         title="Recently deleted payers"
+         icon={UsersRound}
+         empty="No recently deleted payers."
+         count={deletedPayers.length}
         pagination={
           <Pagination
             page={payerPage}
             pageCount={payerPageCount}
-            totalItems={archivedPayers.length}
+            totalItems={deletedPayers.length}
             pageSize={PAGE_SIZE}
             onPageChange={setPayerPage}
           />
@@ -140,12 +146,11 @@ export function ArchivePage() {
                 {payer.name}
               </p>
               <p className="mt-1 break-words text-xs text-slate-500">
-                {payer.email} · Archived{" "}
-                {formatDateTime(payer.archivedAt ?? "")}
+                {payer.email} · Deleted {formatDateTime(payer.deletedAt ?? "")}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                {payer.schoolLevel} · {payer.yearLevel}
-              </p>
+                {payer.schoolLevel} · {payer.yearLevel} · Auto-delete {formatDeletionDeadline(payer.deletedAt)}
+               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -165,17 +170,17 @@ export function ArchivePage() {
             </div>
           </div>
         ))}
-      </ArchiveSection>
-      <ArchiveSection
-        title="Archived payment types"
-        icon={Layers3}
-        empty="No archived payment types."
-        count={archivedTypes.length}
+      </DeletedSection>
+       <DeletedSection
+         title="Recently deleted payment types"
+         icon={Layers3}
+         empty="No recently deleted payment types."
+         count={deletedTypes.length}
         pagination={
           <Pagination
             page={typePage}
             pageCount={typePageCount}
-            totalItems={archivedTypes.length}
+            totalItems={deletedTypes.length}
             pageSize={PAGE_SIZE}
             onPageChange={setTypePage}
           />
@@ -191,12 +196,11 @@ export function ArchivePage() {
                 {offering.name}
               </p>
               <p className="mt-1 break-words text-xs text-slate-500">
-                {offering.slug} · Archived{" "}
-                {formatDateTime(offering.archivedAt ?? "")}
+                {offering.slug} · Deleted {formatDateTime(offering.deletedAt ?? "")}
               </p>
               <p className="mt-1 text-[11px] text-slate-400">
-                {offering.description}
-              </p>
+                {offering.description} · Auto-delete {formatDeletionDeadline(offering.deletedAt)}
+               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -216,7 +220,7 @@ export function ArchivePage() {
             </div>
           </div>
         ))}
-      </ArchiveSection>
+      </DeletedSection>
       <ConfirmDialog
         open={Boolean(deletePayerId)}
         onClose={() => setDeletePayerId(null)}
@@ -249,7 +253,7 @@ export function ArchivePage() {
   );
 }
 
-function ArchiveSection({
+function DeletedSection({
   title,
   icon: Icon,
   empty,

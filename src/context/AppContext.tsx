@@ -42,10 +42,10 @@ interface AppContextValue {
   undoAttendance: (paymentId: string, attendeeId?: string) => Promise<PaymentRecord | undefined>;
   createOffering: (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => Promise<PaymentOffering>;
   saveOffering: (offering: PaymentOffering, image?: PaymentOfferingImageUpdate) => Promise<void>;
-  archiveOffering: (offeringId: string) => Promise<void>;
+  moveOfferingToRecentlyDeleted: (offeringId: string) => Promise<void>;
   restoreOffering: (offeringId: string) => Promise<void>;
   deleteOfferingPermanently: (offeringId: string) => Promise<void>;
-  archivePayer: (payerId: string) => Promise<void>;
+  movePayerToRecentlyDeleted: (payerId: string) => Promise<void>;
   restorePayer: (payerId: string) => Promise<void>;
   deletePayerPermanently: (payerId: string) => Promise<void>;
   savePaymentMethod: (method: PaymentMethodConfig) => Promise<void>;
@@ -114,7 +114,7 @@ const mapOffering = (row: DbRow): PaymentOffering => {
     payLaterDeadlineAt: row.pay_later_deadline_at ?? undefined,
     imagePath: typeof row.image_path === "string" ? row.image_path : undefined,
     imageUrl: typeof row.image_url === "string" ? row.image_url : undefined,
-    archivedAt: row.archived_at ?? undefined,
+    deletedAt: row.archived_at ?? undefined,
   };
 };
 
@@ -144,7 +144,7 @@ const mapPayer = (row: DbRow): Student => ({
   strand: row.strand ?? undefined,
   course: row.course ?? undefined,
   avatar: String(row.avatar ?? initials(String(row.name ?? ""))),
-  archivedAt: row.archived_at ?? undefined,
+  deletedAt: row.archived_at ?? undefined,
 });
 
 const mapAttendee = (row: DbRow): PaymentAttendee => ({
@@ -215,6 +215,29 @@ const fetchPaymentAttendees = async (client: ReturnType<typeof requireSupabase>,
   const { data, error } = await client.from("hs-payment-attendees").select("*").eq("payment_id", paymentId).order("position", { ascending: true });
   if (error) throw error;
   return (data ?? []).map(mapAttendee);
+};
+
+const fetchPaymentRowsForPayer = async (client: ReturnType<typeof requireSupabase>, payerId: string) => {
+  const [primaryResponse, attendeeResponse] = await Promise.all([
+    client.from("hs-payments").select("id,proof_path").eq("payer_id", payerId),
+    client.from("hs-payment-attendees").select("payment_id").eq("payer_id", payerId),
+  ]);
+  if (primaryResponse.error) throw primaryResponse.error;
+  if (attendeeResponse.error) throw attendeeResponse.error;
+  const paymentIds = Array.from(new Set([
+    ...(primaryResponse.data ?? []).map((row) => String(row.id)),
+    ...(attendeeResponse.data ?? []).map((row) => String(row.payment_id)),
+  ]));
+  if (!paymentIds.length) return [];
+  const { data, error } = await client.from("hs-payments").select("id,proof_path").in("id", paymentIds);
+  if (error) throw error;
+  return data ?? [];
+};
+
+const fetchPaymentRowsForOffering = async (client: ReturnType<typeof requireSupabase>, offeringId: string) => {
+  const { data, error } = await client.from("hs-payments").select("id,proof_path").eq("offering_id", offeringId);
+  if (error) throw error;
+  return data ?? [];
 };
 
 const dataUrlToBlob = (value: string, label = "image") => {
@@ -307,7 +330,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (item.signedUrl) proofUrls.set(proofPaths[index], item.signedUrl);
         });
       }
-      const payments = paymentRows.map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap, attendeeMap));
+      const payments = paymentRows
+        .map((payment) => mapPayment({ ...payment, proof_url: proofUrls.get(String(payment.proof_path ?? "")) }, payers, offeringMap, attendeeMap))
+        .filter((payment) => {
+          const offering = offeringMap.get(payment.offeringId);
+          if (offering?.deletedAt) return false;
+          return !getPaymentPayerIds(payment).some((payerId) => payers.get(payerId)?.deletedAt);
+        });
       setData({ students, offerings, paymentMethods, siteSettings, payments, developers: [] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
@@ -391,7 +420,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const submitPayment = async (input: NewPaymentInput) => {
     if (!data.siteSettings.isOpen) throw new Error(data.siteSettings.message);
-    const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.archivedAt);
+    const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.deletedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
     if (!offering.applicableSchoolLevels.includes(input.schoolLevel)) throw new Error("That payment type is not available for the selected school level.");
     if (!offering.availableMethods.includes(input.method)) throw new Error("That payment method is not available.");
@@ -414,22 +443,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       response = await fetch("/api/submit-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-           body: JSON.stringify({ payment: {
-           idempotencyKey: input.idempotencyKey,
-           studentName: attendeeNames[0],
-           attendeeNames,
-           email: input.email,
-          schoolLevel: input.schoolLevel,
-          yearLevel: input.yearLevel,
-          strand: input.strand,
-          course: input.course,
-          offeringId: offering.id,
-          method: input.method,
-          paymentMode: input.paymentMode,
-          senderAccountName: input.senderAccountName,
-          senderReference: input.senderReference,
-          proofImage: input.proofImage,
-        } }),
+          body: JSON.stringify({ payment: {
+            idempotencyKey: input.idempotencyKey,
+            studentName: attendeeNames[0],
+            attendeeNames,
+            email: input.email,
+            schoolLevel: input.schoolLevel,
+            yearLevel: input.yearLevel,
+            strand: input.strand,
+            course: input.course,
+            offeringId: offering.id,
+            method: input.method,
+            paymentMode: input.paymentMode,
+            proofImage: input.proofImage,
+          } }),
         signal: controller.signal,
       });
     } catch (error) {
@@ -693,29 +720,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return updatedPayment;
   };
 
-  const setOfferingArchived = async (offeringId: string, archivedAt: string | null) => {
+  const setOfferingDeleted = async (offeringId: string, deletedAt: string | null) => {
     const client = requireSupabase();
-    const { error } = await client.from("hs-offerings").update({ archived_at: archivedAt }).eq("id", offeringId);
+    const { error } = await client.from("hs-offerings").update({ archived_at: deletedAt }).eq("id", offeringId);
     if (error) throw error;
-    setData((current) => ({ ...current, offerings: current.offerings.map((offering) => offering.id === offeringId ? { ...offering, archivedAt: archivedAt ?? undefined } : offering) }));
+    setData((current) => ({
+      ...current,
+      offerings: current.offerings.map((offering) => offering.id === offeringId ? { ...offering, deletedAt: deletedAt ?? undefined } : offering),
+      payments: deletedAt ? current.payments.filter((payment) => payment.offeringId !== offeringId) : current.payments,
+    }));
+    if (!deletedAt) {
+      try {
+        await loadData(true);
+      } catch {
+        // The database update succeeded; the next refresh can retry the data reload.
+      }
+    }
   };
 
-  const archiveOffering = async (offeringId: string) => setOfferingArchived(offeringId, new Date().toISOString());
-  const restoreOffering = async (offeringId: string) => setOfferingArchived(offeringId, null);
+  const moveOfferingToRecentlyDeleted = async (offeringId: string) => setOfferingDeleted(offeringId, new Date().toISOString());
+  const restoreOffering = async (offeringId: string) => setOfferingDeleted(offeringId, null);
 
   const deleteOfferingPermanently = async (offeringId: string) => {
     const client = requireSupabase();
     const offering = data.offerings.find((item) => item.id === offeringId);
     if (!offering) return;
-    if (!offering.archivedAt) throw new Error("Only archived payment types can be permanently deleted.");
+    if (!offering.deletedAt) throw new Error("Only recently deleted payment types can be permanently deleted.");
 
-    const offeringPayments = data.payments.filter((payment) => payment.offeringId === offeringId);
+    const offeringPayments = await fetchPaymentRowsForOffering(client, offeringId);
     const proofPaths = offeringPayments
-      .filter((payment) => payment.proofPath)
-      .map((payment) => payment.proofPath as string);
-    const payerIds = new Set(offeringPayments.flatMap((payment) => getPaymentPayerIds(payment)));
-    const remainingPayments = data.payments.filter((payment) => payment.offeringId !== offeringId);
-    const remainingPayerIds = new Set(remainingPayments.flatMap((payment) => getPaymentPayerIds(payment)));
+      .map((payment) => typeof payment.proof_path === "string" ? payment.proof_path : "")
+      .filter(Boolean);
 
     for (let offset = 0; offset < proofPaths.length; offset += 1000) {
       const { error: proofError } = await client.storage.from(paymentProofBucket).remove(proofPaths.slice(offset, offset + 1000));
@@ -733,32 +768,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (retryError) throw error;
     }
 
+    try {
+      await loadData(true);
+    } catch {
+      setData((current) => ({ ...current, offerings: current.offerings.filter((item) => item.id !== offeringId), payments: current.payments.filter((payment) => payment.offeringId !== offeringId) }));
+    }
+  };
+
+  const setPayerDeleted = async (payerId: string, deletedAt: string | null) => {
+    const client = requireSupabase();
+    const { error } = await client.from("hs-payers").update({ archived_at: deletedAt }).eq("id", payerId);
+    if (error) throw error;
     setData((current) => ({
       ...current,
-      offerings: current.offerings.filter((item) => item.id !== offeringId),
-      payments: current.payments.filter((payment) => payment.offeringId !== offeringId),
-      students: current.students.filter((student) => !payerIds.has(student.id) || remainingPayerIds.has(student.id)),
+      students: current.students.map((student) => student.id === payerId ? { ...student, deletedAt: deletedAt ?? undefined } : student),
+      payments: deletedAt ? current.payments.filter((payment) => !getPaymentPayerIds(payment).includes(payerId)) : current.payments,
     }));
+    if (!deletedAt) {
+      try {
+        await loadData(true);
+      } catch {
+        // The database update succeeded; the next refresh can retry the data reload.
+      }
+    }
   };
 
-  const setPayerArchived = async (payerId: string, archivedAt: string | null) => {
-    const client = requireSupabase();
-    const { error } = await client.from("hs-payers").update({ archived_at: archivedAt }).eq("id", payerId);
-    if (error) throw error;
-    setData((current) => ({ ...current, students: current.students.map((student) => student.id === payerId ? { ...student, archivedAt: archivedAt ?? undefined } : student) }));
-  };
-
-  const archivePayer = async (payerId: string) => setPayerArchived(payerId, new Date().toISOString());
-  const restorePayer = async (payerId: string) => setPayerArchived(payerId, null);
+  const movePayerToRecentlyDeleted = async (payerId: string) => setPayerDeleted(payerId, new Date().toISOString());
+  const restorePayer = async (payerId: string) => setPayerDeleted(payerId, null);
 
   const deletePayerPermanently = async (payerId: string) => {
     const client = requireSupabase();
-    const linkedPayments = data.payments.filter((payment) => getPaymentPayerIds(payment).includes(payerId));
-    const linkedPayerIds = new Set(linkedPayments.flatMap((payment) => getPaymentPayerIds(payment)));
-    linkedPayerIds.add(payerId);
+    const linkedPayments = await fetchPaymentRowsForPayer(client, payerId);
     const proofPaths = linkedPayments
-      .filter((payment) => payment.proofPath)
-      .map((payment) => payment.proofPath as string);
+      .map((payment) => typeof payment.proof_path === "string" ? payment.proof_path : "")
+      .filter(Boolean);
     for (let offset = 0; offset < proofPaths.length; offset += 1000) {
       const { error: proofError } = await client.storage.from("hs-payment-proofs").remove(proofPaths.slice(offset, offset + 1000));
       if (proofError) throw proofError;
@@ -768,11 +811,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { error: retryError } = await client.rpc("hs_delete_payer_permanently", { p_payer_id: payerId });
       if (retryError) throw error;
     }
-    setData((current) => ({
-      ...current,
-      students: current.students.filter((student) => !linkedPayerIds.has(student.id)),
-      payments: current.payments.filter((payment) => !getPaymentPayerIds(payment).some((id) => linkedPayerIds.has(id))),
-    }));
+    try {
+      await loadData(true);
+    } catch {
+      setData((current) => ({ ...current, students: current.students.filter((student) => student.id !== payerId) }));
+    }
   };
 
   const createOffering = async (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => {
@@ -902,7 +945,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, archiveOffering, restoreOffering, deleteOfferingPermanently, archivePayer, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, moveOfferingToRecentlyDeleted, restoreOffering, deleteOfferingPermanently, movePayerToRecentlyDeleted, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

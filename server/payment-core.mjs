@@ -29,7 +29,7 @@ const parseProofImage = (value) => {
   if (!match) throw new PublicSubmissionError("Choose a valid PNG, JPG, or WEBP proof image.");
   const mime = match[1].toLowerCase();
   const buffer = Buffer.from(match[2], "base64");
-  if (!buffer.length || buffer.length > maxProofBytes) throw new PublicSubmissionError("Choose an image smaller than 5 MB.");
+  if (!buffer.length || buffer.length > maxProofBytes) throw new PublicSubmissionError("Choose an image smaller than 3 MB.");
   const isPng = mime === "image/png" && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
   const isJpeg = mime === "image/jpeg" && buffer.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
   const isWebp = mime === "image/webp" && buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
@@ -58,15 +58,13 @@ const normalizeInput = (input) => {
   const course = typeof payment.course === "string" ? payment.course.trim() : undefined;
   if (schoolLevel === "Senior High School" && (!strand || !allowedStrands.has(strand))) throw new PublicSubmissionError("Choose a valid Senior High School strand.");
   if (schoolLevel === "College" && !course) throw new PublicSubmissionError("A course is required for College payers.");
-  const senderAccountName = typeof payment.senderAccountName === "string" ? payment.senderAccountName.trim() : undefined;
-  const senderReference = typeof payment.senderReference === "string" ? payment.senderReference.trim() : undefined;
   const proofImage = paymentMode === "PayNow" && method !== "Cash" ? parseProofImage(payment.proofImage) : null;
-  if (paymentMode === "PayNow" && method !== "Cash" && (!senderAccountName || !senderReference || !proofImage)) throw new PublicSubmissionError("Sender account, payment reference, and proof are required for cashless payments.");
+  if (paymentMode === "PayNow" && method !== "Cash" && !proofImage) throw new PublicSubmissionError("Proof of payment is required for cashless payments.");
   if (!payment.offeringId || typeof payment.offeringId !== "string") throw new PublicSubmissionError("The selected payment type is invalid.");
   if (!attendeeNames.length || attendeeNames.some((name) => !name || name.length > 160)) throw new PublicSubmissionError("Each attendee must have a valid name.");
   if (new Set(attendeeNames.map((name) => name.toLowerCase())).size !== attendeeNames.length) throw new PublicSubmissionError("Each attendee name must be unique.");
   const idempotencyKey = typeof payment.idempotencyKey === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payment.idempotencyKey) ? payment.idempotencyKey : undefined;
-  return { idempotencyKey, studentName, attendeeNames, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, senderAccountName, senderReference, proofImage };
+  return { idempotencyKey, studentName, attendeeNames, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, proofImage };
 };
 
 const hashValue = (value, secret) => createHash("sha256").update(`${secret}:${value}`).digest("hex");
@@ -118,8 +116,7 @@ export async function submitPayment(input, { requestKey } = {}) {
       && existingResponse.data.offering_id === payment.offeringId
       && existingResponse.data.method === payment.method
       && existingResponse.data.payment_mode === payment.paymentMode
-      && (existingResponse.data.sender_account_name ?? undefined) === (payment.senderAccountName ?? undefined)
-      && (existingResponse.data.sender_reference ?? undefined) === (payment.senderReference ?? undefined);
+      && Boolean(existingResponse.data.proof_path) === Boolean(payment.proofImage);
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
     return existingPayment;
   }
@@ -155,8 +152,6 @@ export async function submitPayment(input, { requestKey } = {}) {
       p_offering_id: payment.offeringId,
       p_method: payment.method,
       p_payment_mode: payment.paymentMode,
-      p_sender_account_name: payment.senderAccountName ?? null,
-      p_sender_reference: payment.senderReference ?? null,
       p_proof_path: proofPath ?? null,
       p_attendee_names: payment.attendeeNames,
     });

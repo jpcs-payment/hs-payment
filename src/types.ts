@@ -26,7 +26,7 @@ export interface Student {
   strand?: string;
   course?: string;
   avatar: string;
-  archivedAt?: string;
+  deletedAt?: string;
 }
 
 export interface PaymentMethodConfig {
@@ -73,7 +73,7 @@ export interface PaymentOffering {
   payLaterDeadlineAt?: string;
   imagePath?: string;
   imageUrl?: string;
-  archivedAt?: string;
+  deletedAt?: string;
 }
 
 export interface PaymentRecord {
@@ -162,8 +162,6 @@ export interface NewPaymentInput {
   method: PaymentMethod;
   paymentMode: PaymentMode;
   paymentDeadlineAt?: string;
-  senderAccountName?: string;
-  senderReference?: string;
   proofImage?: string;
 }
 

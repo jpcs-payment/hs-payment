@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { LucideIcon } from "lucide-react";
-import { Archive, BarChart3, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, ReceiptText, RefreshCw, ScanLine, Search, Settings2, Tags, UsersRound } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, ReceiptText, RefreshCw, ScanLine, Search, Settings2, Tags, Trash2, UsersRound } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { formatCurrency } from "../lib/utils";
 import { AdminPageSkeleton, Avatar, Button, Input } from "./ui";
@@ -23,7 +23,7 @@ const navigation: NavItem[] = [
   { label: "Reports", to: "/admin/reports", icon: BarChart3 },
   { label: "Attendance", to: "/admin/attendance", icon: ScanLine },
   { label: "Methods", to: "/admin/methods", icon: Settings2 },
-  { label: "Archive", to: "/admin/archive", icon: Archive },
+  { label: "Recently Deleted", to: "/admin/recently-deleted", icon: Trash2 },
 ];
 
 const mobilePrimaryNavigation = navigation.slice(0, 4);
@@ -36,7 +36,7 @@ const pageTitles: Array<[string, string]> = [
   ["/admin/reports", "Reports"],
   ["/admin/attendance", "Attendance"],
   ["/admin/methods", "Methods"],
-  ["/admin/archive", "Archive"],
+  ["/admin/recently-deleted", "Recently Deleted"],
 ];
 
 interface SearchResult {
@@ -63,7 +63,7 @@ export function AppShell() {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return [];
     const payers = data.students
-      .filter((student) => !student.archivedAt && `${student.name} ${student.email} ${student.yearLevel} ${student.strand ?? ""} ${student.course ?? ""}`.toLowerCase().includes(query))
+      .filter((student) => !student.deletedAt && `${student.name} ${student.email} ${student.yearLevel} ${student.strand ?? ""} ${student.course ?? ""}`.toLowerCase().includes(query))
       .slice(0, 4)
       .map((student) => ({ label: student.name, detail: `${student.email} · Payer`, to: "/admin/payers" }));
     const payments = data.payments
@@ -71,7 +71,7 @@ export function AppShell() {
        .slice(0, 4)
        .map((payment) => ({ label: payment.reference, detail: `${getPaymentAttendeeSummary(payment)} · ${formatCurrency(payment.amount)}`, to: "/admin/payments" }));
     const offerings = data.offerings
-      .filter((offering) => !offering.archivedAt && `${offering.name} ${offering.slug} ${offering.description}`.toLowerCase().includes(query))
+      .filter((offering) => !offering.deletedAt && `${offering.name} ${offering.slug} ${offering.description}`.toLowerCase().includes(query))
       .slice(0, 4)
       .map((offering) => ({ label: offering.name, detail: `${formatCurrency(offering.amount)} · Payment type`, to: "/admin/offerings" }));
     return [...payers, ...payments, ...offerings].slice(0, 8);

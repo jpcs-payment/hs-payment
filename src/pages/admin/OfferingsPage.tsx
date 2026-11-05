@@ -47,14 +47,14 @@ const toLocalDateTimeInput = (value?: string) => {
 };
 
 function LegacyOfferingsPage() {
-  const { data, createOffering, saveOffering, archiveOffering } = useApp();
+  const { data, createOffering, saveOffering, moveOfferingToRecentlyDeleted } = useApp();
   const { pushToast } = useToast();
   const [draft, setDraft] = useState<OfferingDraft | null>(null);
   const [saving, setSaving] = useState(false);
-  const [archiveId, setArchiveId] = useState<string | null>(null);
-  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [page, setPage] = useState(1);
-  const activeOfferings = data.offerings.filter((offering) => !offering.archivedAt);
+  const activeOfferings = data.offerings.filter((offering) => !offering.deletedAt);
   const pageCount = getPageCount(activeOfferings.length, PAGE_SIZE);
   const visibleOfferings = getPageItems(activeOfferings, page, PAGE_SIZE);
 
@@ -337,25 +337,25 @@ function LegacyOfferingsPage() {
     }
   };
 
-  const handleArchive = async () => {
-    if (!archiveId) return;
-    setArchiveLoading(true);
+  const moveToRecentlyDeleted = async () => {
+    if (!deleteId) return;
+    setDeleteLoading(true);
     try {
-      await archiveOffering(archiveId);
-      setArchiveId(null);
+      await moveOfferingToRecentlyDeleted(deleteId);
+      setDeleteId(null);
       pushToast({
         tone: "success",
-        title: "Payment type archived",
-        message: "It is hidden from active lists and the public payment form.",
+        title: "Payment type moved to Recently Deleted",
+        message: "It is hidden from the active workspace and will be permanently deleted after 30 days unless restored.",
       });
     } catch (error) {
       pushToast({
         tone: "error",
-        title: "Could not archive payment type",
+        title: "Could not move payment type",
         message: error instanceof Error ? error.message : "Try again.",
       });
     } finally {
-      setArchiveLoading(false);
+      setDeleteLoading(false);
     }
   };
 
@@ -373,7 +373,7 @@ function LegacyOfferingsPage() {
         <CatalogStat
           label="Total types"
           value={
-            data.offerings.filter((offering) => !offering.archivedAt).length
+            data.offerings.filter((offering) => !offering.deletedAt).length
           }
           icon={Layers3}
         />
@@ -381,7 +381,7 @@ function LegacyOfferingsPage() {
           label="Active types"
           value={
             data.offerings.filter(
-              (offering) => offering.active && !offering.archivedAt,
+              (offering) => offering.active && !offering.deletedAt,
             ).length
           }
           icon={Check}
@@ -389,7 +389,7 @@ function LegacyOfferingsPage() {
         <CatalogStat
           label="Allocation rules"
           value={data.offerings
-            .filter((offering) => !offering.archivedAt)
+            .filter((offering) => !offering.deletedAt)
             .reduce(
               (total, offering) => total + offering.allocations.length,
               0,
@@ -409,9 +409,9 @@ function LegacyOfferingsPage() {
                 <button
                   type="button"
                   className="absolute bottom-5 left-5 rounded-lg px-2 py-1 text-[10px] font-bold text-white/60 transition hover:bg-white/10 hover:text-white"
-                  onClick={() => setArchiveId(offering.id)}
+                  onClick={() => setDeleteId(offering.id)}
                 >
-                  Archive
+                  Move to Recently Deleted
                 </button>
               </div>
             ))}
@@ -459,14 +459,14 @@ function LegacyOfferingsPage() {
         ) : null}
       </Dialog>
       <ConfirmDialog
-        open={Boolean(archiveId)}
-        onClose={() => setArchiveId(null)}
-        onConfirm={() => void handleArchive()}
-        title="Archive payment type?"
-        description="This hides the payment type from active admin lists and the public payment form. Existing payment records remain unchanged."
-        confirmLabel="Archive payment type"
+        open={Boolean(deleteId)}
+        onClose={() => setDeleteId(null)}
+        onConfirm={() => void moveToRecentlyDeleted()}
+        title="Move payment type to Recently Deleted?"
+        description="This hides the payment type from the active workspace and public payment form. Existing records remain disconnected until restored or permanently deleted."
+        confirmLabel="Move to Recently Deleted"
         danger
-        loading={archiveLoading}
+        loading={deleteLoading}
       />
     </div>
   );
@@ -475,7 +475,7 @@ function LegacyOfferingsPage() {
 export function OfferingsPage() {
   const { data } = useApp();
   const activeOfferings = data.offerings.filter(
-    (offering) => !offering.archivedAt,
+    (offering) => !offering.deletedAt,
   );
   const typeExportHeaders = ["Type", "Slug", "Description", "Amount per name", "Active", "Payment methods", "Pay Later methods", "Applicable school levels", "Deadline"];
   const typeExportRows = () => activeOfferings.map((offering) => [

@@ -14,7 +14,7 @@ const OfferingsPage = lazy(() => import("./pages/admin/OfferingsPage").then((mod
 const ReportsPage = lazy(() => import("./pages/admin/ReportsPage").then((module) => ({ default: module.ReportsPage })));
 const PaymentMethodsPage = lazy(() => import("./pages/admin/PaymentMethodsPage").then((module) => ({ default: module.PaymentMethodsPage })));
 const AttendancePage = lazy(() => import("./pages/admin/AttendancePage").then((module) => ({ default: module.AttendancePage })));
-const ArchivePage = lazy(() => import("./pages/admin/ArchivePage").then((module) => ({ default: module.ArchivePage })));
+const RecentlyDeletedPage = lazy(() => import("./pages/admin/RecentlyDeletedPage").then((module) => ({ default: module.RecentlyDeletedPage })));
 
 function AdminGuard() {
   const { session, authLoading } = useApp();
@@ -52,7 +52,7 @@ export function App() {
               <Route path="/admin/reports" element={<ReportsPage />} />
               <Route path="/admin/methods" element={<PaymentMethodsPage />} />
               <Route path="/admin/attendance" element={<AttendancePage />} />
-              <Route path="/admin/archive" element={<ArchivePage />} />
+              <Route path="/admin/recently-deleted" element={<RecentlyDeletedPage />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

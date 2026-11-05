@@ -95,8 +95,8 @@ export function AdminPageSkeleton({ page = "", label = "Loading admin page" }: {
             ? "attendance"
             : page.includes("/admin/methods")
               ? "methods"
-              : page.includes("/admin/archive")
-                ? "archive"
+              : page.includes("/admin/recently-deleted")
+                ? "recently-deleted"
                 : "payments";
 
   const stats = (count: number) => <div className={`grid grid-cols-2 gap-2.5 sm:gap-4 ${count === 3 ? "sm:grid-cols-3" : count === 5 ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>{Array.from({ length: count }, (_, index) => <Skeleton key={index} className="h-20 sm:h-24" />)}</div>;
@@ -111,7 +111,7 @@ export function AdminPageSkeleton({ page = "", label = "Loading admin page" }: {
       {pageKey === "methods" ? <>{header()}<Card className="overflow-hidden"><Skeleton className="h-32 rounded-none" /><div className="p-4"><Skeleton className="h-8 w-2/3" /></div></Card><div className="grid gap-4 md:grid-cols-3">{Array.from({ length: 3 }, (_, index) => <Skeleton key={index} className="h-64" />)}</div></> : null}
       {pageKey === "reports" ? <>{header()} {stats(5)}<Skeleton className="h-64 w-full" /><Card className="p-4"><div className="grid gap-3 sm:grid-cols-4"><Skeleton className="h-11" /><Skeleton className="h-11" /><Skeleton className="h-11" /><Skeleton className="h-11" /></div></Card><Skeleton className="h-96 w-full" /></> : null}
       {pageKey === "attendance" ? <>{header(false)} {stats(4)}<div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]"><Skeleton className="h-[430px]" /><div className="space-y-5"><Skeleton className="h-48" /><Skeleton className="h-48" /></div></div><Card className="p-4"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><Skeleton className="h-11" /><Skeleton className="h-11" /><Skeleton className="h-11" /><Skeleton className="h-11" /><Skeleton className="h-11" /></div></Card><Skeleton className="h-80 w-full" /></> : null}
-      {pageKey === "archive" ? <>{header(false)}<Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></> : null}
+      {pageKey === "recently-deleted" ? <>{header(false)}<Skeleton className="h-56 w-full" /><Skeleton className="h-56 w-full" /></> : null}
       <span className="sr-only">{label}</span>
     </div>
   );
