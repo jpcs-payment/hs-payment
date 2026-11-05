@@ -1,4 +1,5 @@
 import { createTicketQrImage } from "./ticket-qr-image.mjs";
+import sharp from "sharp";
 
 const QR_PREFIX = "JPCS-LCC-TICKET:";
 const isEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -56,7 +57,7 @@ const formatDateTime = (value) => new Intl.DateTimeFormat("en-PH", {
 const paymentDetails = (payment) => [payment.schoolLevel, payment.yearLevel, payment.strand, payment.course].filter(Boolean).join(" · ") || "Not provided";
 const attendeesFor = (payment) => Array.isArray(payment?.attendees) && payment.attendees.length
   ? payment.attendees
-  : [{ name: payment?.studentName, position: 1, ticketId: payment?.ticketId, ticketQrValue: payment?.ticketQrValue }];
+  : [{ id: `legacy-${payment?.id}`, name: payment?.studentName, position: 1, ticketId: payment?.ticketId, ticketQrValue: payment?.ticketQrValue }];
 const attendeeNames = (payment) => attendeesFor(payment).map((attendee) => String(attendee.name ?? "").trim()).filter(Boolean);
 const attendeeListHtml = (payment) => attendeesFor(payment).map((attendee, index) => `<li style="margin:0 0 7px;color:#0b1f3a"><strong>${escapeHtml(attendee.name)}</strong>${payment.generateQr !== false ? `<span style="color:#7a8799"> · Ticket ${escapeHtml(attendee.ticketId ?? `#${index + 1}`)}</span>` : ""}</li>`).join("");
 const attendeeListText = (payment) => attendeesFor(payment).map((attendee, index) => `${index + 1}. ${attendee.name}${payment.generateQr !== false ? ` · Ticket ${attendee.ticketId ?? "-"}` : ""}`).join("\n");
@@ -68,6 +69,40 @@ const attachmentBaseName = (name, index) => {
     .replace(/^-+|-+$/g, "")
     .toLowerCase();
   return normalized || `attendee-${index + 1}`;
+};
+const maxSubmittedQrImageBytes = 2 * 1024 * 1024;
+const maxSubmittedQrImagesBytes = 3 * 1024 * 1024;
+const maxSubmittedQrDataUrlLength = Math.ceil(maxSubmittedQrImageBytes / 3) * 4 + 64;
+const submittedQrDataUrlPattern = /^data:image\/png;base64,([A-Za-z0-9+/]+={0,2})$/;
+
+const decodeSubmittedQrImage = async (dataUrl) => {
+  if (typeof dataUrl !== "string" || dataUrl.length > maxSubmittedQrDataUrlLength) throw new Error("A supplied QR image is invalid.");
+  const match = submittedQrDataUrlPattern.exec(dataUrl);
+  if (!match) throw new Error("A supplied QR image must be a PNG data URL.");
+  const buffer = Buffer.from(match[1], "base64");
+  if (!buffer.length || buffer.length > maxSubmittedQrImageBytes) throw new Error("A supplied QR image is too large.");
+  try {
+    const metadata = await sharp(buffer).metadata();
+    if (metadata.format !== "png" || metadata.width !== 900 || metadata.height !== 1000) throw new Error("Unexpected QR image dimensions.");
+  } catch {
+    throw new Error("A supplied QR image must be a valid 900x1000 PNG.");
+  }
+  return buffer;
+};
+
+const submittedQrImagesFor = async (payment) => {
+  const dataUrls = payment?.qrDataUrls;
+  if (dataUrls === undefined) return undefined;
+  if (!dataUrls || typeof dataUrls !== "object" || Array.isArray(dataUrls)) throw new Error("The supplied QR image list is invalid.");
+  const attendees = attendeesFor(payment);
+  const attendeeIds = attendees.map((attendee) => String(attendee.id));
+  const submittedIds = Object.keys(dataUrls);
+  if (new Set(attendeeIds).size !== attendeeIds.length || submittedIds.length !== attendeeIds.length || attendeeIds.some((id) => !Object.prototype.hasOwnProperty.call(dataUrls, id))) {
+    throw new Error("The supplied QR images do not match the attendee list.");
+  }
+  const buffers = await Promise.all(attendees.map((attendee) => decodeSubmittedQrImage(dataUrls[attendee.id])));
+  if (buffers.reduce((total, buffer) => total + buffer.length, 0) > maxSubmittedQrImagesBytes) throw new Error("The supplied QR images are too large.");
+  return new Map(attendees.map((attendee, index) => [attendee.id, buffers[index]]));
 };
 const field = (label, value) => `<td style="width:50%;padding:9px 10px;border:1px solid #d9e2ef;border-radius:10px;vertical-align:top;overflow-wrap:anywhere;word-break:break-word"><div style="font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#7a8799;font-weight:700">${escapeHtml(label)}</div><div style="margin-top:5px;color:#0b1f3a;font-size:13px;font-weight:700;overflow-wrap:anywhere;word-break:break-word">${escapeHtml(value)}</div></td>`;
 
@@ -151,7 +186,7 @@ const verifyPaymentRecord = async (payment, payLater) => {
   const storedAttendees = await attendeesResponse.json();
   const canonicalAttendees = Array.isArray(storedAttendees) && storedAttendees.length
     ? storedAttendees
-    : [{ id: `${storedPayment.id}-legacy`, name: payer?.name, position: 1, ticket_id: storedPayment.ticket_id, ticket_qr_value: storedPayment.ticket_qr_value, attended_at: storedPayment.attended_at }];
+    : [{ id: `legacy-${storedPayment.id}`, name: payer?.name, position: 1, ticket_id: storedPayment.ticket_id, ticket_qr_value: storedPayment.ticket_qr_value, attended_at: storedPayment.attended_at }];
   const submittedAttendees = attendeesFor(payment);
   const storedParentTicketId = String(storedPayment.ticket_id ?? "");
   const storedParentQrValue = String(storedPayment.ticket_qr_value ?? "");
@@ -320,6 +355,12 @@ const sendEmail = async (payment, payLater, { verify = false, requireAdmin = fal
     if (verificationError.error) return { status: 403, body: { error: verificationError.error } };
     deliveryPayment = verificationError.payment;
   }
+  let submittedQrImages;
+  try {
+    submittedQrImages = deliveryPayment.generateQr === false ? undefined : await submittedQrImagesFor(deliveryPayment);
+  } catch (error) {
+    return { status: 400, body: { error: error instanceof Error ? error.message : "The supplied QR images are invalid." } };
+  }
   const deliveryClaim = await claimEmailDelivery(deliveryPayment);
   if (deliveryClaim.error) return { status: 503, body: { error: deliveryClaim.error } };
   if (deliveryClaim.sent) return { status: 409, body: { error: "This payment confirmation email has already been sent." } };
@@ -345,7 +386,7 @@ const sendEmail = async (payment, payLater, { verify = false, requireAdmin = fal
   try {
     const usedAttachmentNames = new Set();
     const qrAttachments = deliveryPayment.generateQr === false ? undefined : await Promise.all(attendeesFor(deliveryPayment).map(async (attendee, index) => {
-      const qrBuffer = await createTicketQrImage({ value: attendee.ticketQrValue, name: attendee.name, ticketId: attendee.ticketId });
+      const qrBuffer = submittedQrImages?.get(attendee.id) ?? await createTicketQrImage({ value: attendee.ticketQrValue, name: attendee.name, ticketId: attendee.ticketId });
       const baseName = attachmentBaseName(attendee.name, index);
       let fileName = baseName;
       let suffix = 2;

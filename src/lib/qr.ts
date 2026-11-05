@@ -1,5 +1,10 @@
 import QRCode from "qrcode";
 import jpcsLogo from "../../jpcslogo/cropped_circle_image.png";
+import { createTicketQrValue } from "./branding";
+import type { PaymentAttendee } from "../types";
+
+export type BrandedQrAttendee = Pick<PaymentAttendee, "id" | "name" | "ticketId" | "ticketQrValue">;
+export type QrDataUrls = Record<string, string>;
 
 const canvasWidth = 900;
 const canvasHeight = 1000;
@@ -72,4 +77,12 @@ export const createBrandedQrDataUrl = async (value: string, name: string, ticket
   context.stroke();
   context.drawImage(logo, logoLeft, logoTop, logoSize, logoSize);
   return canvas.toDataURL("image/png");
+};
+
+export const createBrandedQrDataUrls = async (attendees: BrandedQrAttendee[]): Promise<QrDataUrls> => {
+  const entries = await Promise.all(attendees.map(async (attendee) => {
+    const value = attendee.ticketQrValue ?? createTicketQrValue(attendee.ticketId ?? "");
+    return [attendee.id, await createBrandedQrDataUrl(value, attendee.name, attendee.ticketId ?? "")] as const;
+  }));
+  return Object.fromEntries(entries);
 };

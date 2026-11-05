@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { cloneInitialData } from "../data/seed";
 import { createTicketQrValue } from "../lib/branding";
 import { EmailDeliveryError, sendApprovalEmail as deliverApprovalEmail, sendPayLaterEmail as deliverPayLaterEmail } from "../lib/email";
+import { createBrandedQrDataUrls, type QrDataUrls } from "../lib/qr";
 import { initials, createReference } from "../lib/utils";
 import { getPaymentAttendees, getPaymentPayerIds } from "../lib/payment";
 import { requireSupabase, supabase } from "../lib/supabase";
@@ -35,8 +36,8 @@ interface AppContextValue {
   submitPayment: (input: NewPaymentInput) => Promise<PaymentRecord>;
   approvePayment: (paymentId: string) => Promise<PaymentRecord | undefined>;
   rejectPayment: (paymentId: string, reason: string) => Promise<PaymentRecord | undefined>;
-  sendApprovalEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
-  sendPayLaterEmail: (payment: PaymentRecord) => Promise<PaymentRecord | undefined>;
+  sendApprovalEmail: (payment: PaymentRecord, qrDataUrls?: QrDataUrls) => Promise<PaymentRecord | undefined>;
+  sendPayLaterEmail: (payment: PaymentRecord, qrDataUrls?: QrDataUrls) => Promise<PaymentRecord | undefined>;
   markPayLaterReceived: (paymentId: string) => Promise<PaymentRecord | undefined>;
   checkInTicket: (value: string) => Promise<TicketCheckInResult>;
   undoAttendance: (paymentId: string, attendeeId?: string) => Promise<PaymentRecord | undefined>;
@@ -637,11 +638,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   };
 
-  const sendApprovalEmail = async (payment: PaymentRecord) => {
+  const sendApprovalEmail = async (payment: PaymentRecord, providedQrDataUrls?: QrDataUrls) => {
     if (payment.status !== "Approved") return undefined;
     if (payment.emailDeliveryStatus === "Sent") return payment;
     try {
-      const response = await deliverApprovalEmail(payment);
+      const qrDataUrls = payment.generateQr === false ? undefined : providedQrDataUrls ?? await createBrandedQrDataUrls(getPaymentAttendees(payment));
+      const response = await deliverApprovalEmail(payment, qrDataUrls);
       const sentAt = response.emailSentAt ?? new Date().toISOString();
       try {
         const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });
@@ -668,11 +670,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const sendPayLaterEmail = async (payment: PaymentRecord) => {
+  const sendPayLaterEmail = async (payment: PaymentRecord, providedQrDataUrls?: QrDataUrls) => {
     if (payment.paymentMode !== "PayLater") return undefined;
     if (payment.emailDeliveryStatus === "Sent") return payment;
     try {
-      const response = await deliverPayLaterEmail(payment);
+      const qrDataUrls = payment.generateQr === false ? undefined : providedQrDataUrls ?? await createBrandedQrDataUrls(getPaymentAttendees(payment));
+      const response = await deliverPayLaterEmail(payment, qrDataUrls);
       const sentAt = response.emailSentAt ?? new Date().toISOString();
       try {
         const sent = await updateEmailState(payment.id, { email_delivery_status: "Sent", email_sent_at: sentAt, email_id: response.emailId ?? null, email_delivery_error: null });

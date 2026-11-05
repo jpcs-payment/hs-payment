@@ -1,4 +1,5 @@
 import type { PaymentRecord } from "../types";
+import type { QrDataUrls } from "./qr";
 import { supabase } from "./supabase";
 
 export class EmailDeliveryError extends Error {
@@ -23,7 +24,7 @@ const getAuthHeaders = async (): Promise<Record<string, string>> => {
   return token ? { Authorization: `Bearer ${token}` } : {};
 };
 
-const toPayLaterEmailPayload = (payment: PaymentRecord) => ({
+const toPayLaterEmailPayload = (payment: PaymentRecord, qrDataUrls?: QrDataUrls) => ({
   id: payment.id,
   status: payment.status,
   paymentState: payment.paymentState,
@@ -43,9 +44,10 @@ const toPayLaterEmailPayload = (payment: PaymentRecord) => ({
   course: payment.course,
   allocations: payment.allocations,
   method: payment.method,
+  ...(qrDataUrls ? { qrDataUrls } : {}),
 });
 
-const toApprovalEmailPayload = (payment: PaymentRecord) => ({
+const toApprovalEmailPayload = (payment: PaymentRecord, qrDataUrls?: QrDataUrls) => ({
   id: payment.id,
   status: payment.status,
   studentName: payment.studentName,
@@ -65,9 +67,10 @@ const toApprovalEmailPayload = (payment: PaymentRecord) => ({
   course: payment.course,
   allocations: payment.allocations,
   method: payment.method,
+  ...(qrDataUrls ? { qrDataUrls } : {}),
 });
 
-export async function sendApprovalEmail(payment: PaymentRecord): Promise<ApprovalEmailResponse> {
+export async function sendApprovalEmail(payment: PaymentRecord, qrDataUrls?: QrDataUrls): Promise<ApprovalEmailResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   let response: Response;
@@ -75,7 +78,7 @@ export async function sendApprovalEmail(payment: PaymentRecord): Promise<Approva
       response = await fetch("/api/send-approval-email", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
-      body: JSON.stringify({ payment: toApprovalEmailPayload(payment) }),
+      body: JSON.stringify({ payment: toApprovalEmailPayload(payment, qrDataUrls) }),
       signal: controller.signal,
     });
   } catch (error) {
@@ -95,7 +98,7 @@ export async function sendApprovalEmail(payment: PaymentRecord): Promise<Approva
   return body;
 }
 
-export async function sendPayLaterEmail(payment: PaymentRecord): Promise<ApprovalEmailResponse> {
+export async function sendPayLaterEmail(payment: PaymentRecord, qrDataUrls?: QrDataUrls): Promise<ApprovalEmailResponse> {
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), 15000);
   let response: Response;
@@ -103,7 +106,7 @@ export async function sendPayLaterEmail(payment: PaymentRecord): Promise<Approva
       response = await fetch("/api/send-pay-later-email", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await getAuthHeaders()) },
-      body: JSON.stringify({ payment: toPayLaterEmailPayload(payment) }),
+      body: JSON.stringify({ payment: toPayLaterEmailPayload(payment, qrDataUrls) }),
       signal: controller.signal,
     });
   } catch (error) {

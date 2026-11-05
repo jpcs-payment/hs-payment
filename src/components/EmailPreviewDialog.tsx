@@ -3,8 +3,8 @@ import { AlertCircle, CheckCircle2, Mail, Send, ShieldCheck, Ticket } from "luci
 import { Dialog, Button } from "./ui";
 import { formatCurrency, formatDateTime } from "../lib/utils";
 import type { PaymentRecord } from "../types";
-import { BRANDING, createTicketQrValue } from "../lib/branding";
-import { createBrandedQrDataUrl } from "../lib/qr";
+import { BRANDING } from "../lib/branding";
+import { createBrandedQrDataUrls } from "../lib/qr";
 import { useApp } from "../context/AppContext";
 import { useToast } from "./Toast";
 import { getPaymentAttendees } from "../lib/payment";
@@ -29,11 +29,8 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
     }
     setQrDataUrls({});
     setQrError("");
-    Promise.all(attendees.map(async (attendee) => {
-      const value = attendee.ticketQrValue ?? createTicketQrValue(attendee.ticketId ?? "");
-      return [attendee.id, await createBrandedQrDataUrl(value, attendee.name, attendee.ticketId ?? "")] as const;
-    })).then((entries) => {
-      if (!cancelled) setQrDataUrls(Object.fromEntries(entries));
+    createBrandedQrDataUrls(attendees).then((images) => {
+      if (!cancelled) setQrDataUrls(images);
     }).catch(() => {
       if (!cancelled) setQrError("A QR image could not be generated.");
     });
@@ -44,9 +41,13 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
 
   const handleSend = async () => {
     if (currentPayment.status !== "Approved" || sending || deliveryStatus === "Sending" || deliveryStatus === "Sent") return;
+    if (currentPayment.generateQr !== false && attendees.some((attendee) => !qrDataUrls[attendee.id])) {
+      pushToast({ tone: "error", title: "QR images are still loading", message: qrError || "Wait for the QR images to finish generating, then try again." });
+      return;
+    }
     setSending(true);
     try {
-      await sendApprovalEmail(currentPayment);
+      await sendApprovalEmail(currentPayment, currentPayment.generateQr !== false ? qrDataUrls : undefined);
       pushToast({ tone: "success", title: "Confirmation email sent", message: currentPayment.generateQr !== false ? `The receipt and ${attendees.length} attendance QR${attendees.length === 1 ? "" : "s"} were sent to ${currentPayment.email}.` : `The confirmation was sent to ${currentPayment.email}.` });
     } catch (error) {
       pushToast({ tone: "error", title: "Email delivery failed", message: error instanceof Error ? error.message : "Check the local Brevo configuration and try again." });
