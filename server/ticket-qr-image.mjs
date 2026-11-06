@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import sharp from "sharp";
 import QRCode from "qrcode";
+import satori from "satori";
 
 const canvasWidth = 900;
 const canvasHeight = 1000;
@@ -14,16 +15,33 @@ const logoLeft = Math.round((canvasWidth - logoSize) / 2);
 const logoTop = qrTop + Math.round(qrSize / 2) - Math.round(logoSize / 2) - 12;
 const logoBackdropLeft = Math.round((canvasWidth - logoBackdropSize) / 2);
 const logoBackdropTop = qrTop + Math.round(qrSize / 2) - Math.round(logoBackdropSize / 2) - 12;
-const logoPath = new URL("../jpcslogo/cropped_circle_image.png", import.meta.url);
-const fontPath = fileURLToPath(new URL("../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2", import.meta.url));
+const nameTextTop = 29;
+const ticketTextTop = 97;
+const logoPath = join(process.cwd(), "jpcslogo", "cropped_circle_image.png");
+const fontFiles = [
+  [400, "geist-latin-400-normal.woff2"],
+  [400, "geist-latin-ext-400-normal.woff2"],
+  [400, "geist-vietnamese-400-normal.woff2"],
+  [400, "geist-cyrillic-400-normal.woff2"],
+  [400, "geist-cyrillic-ext-400-normal.woff2"],
+  [600, "geist-latin-600-normal.woff2"],
+  [600, "geist-latin-ext-600-normal.woff2"],
+  [600, "geist-vietnamese-600-normal.woff2"],
+  [600, "geist-cyrillic-600-normal.woff2"],
+  [600, "geist-cyrillic-ext-600-normal.woff2"],
+].map(([weight, fileName]) => ({
+  name: "Geist",
+  path: join(process.cwd(), "node_modules", "@fontsource", "geist", "files", fileName),
+  style: "normal",
+  weight,
+}));
 const logoBufferPromise = readFile(logoPath).then((buffer) => sharp(buffer).resize(logoSize, logoSize, { fit: "contain" }).png().toBuffer());
-const fontReadyPromise = readFile(fontPath);
-
-const escapePango = (value) => String(value ?? "")
-  .replaceAll("&", "&amp;")
-  .replaceAll("<", "&lt;")
-  .replaceAll(">", "&gt;")
-  .replaceAll('"', "&quot;");
+const fontsReadyPromise = Promise.all(fontFiles.map(async ({ name, path, style, weight }) => ({
+  data: await readFile(path),
+  name,
+  style,
+  weight,
+})));
 
 const nameFontSize = (name) => {
   if (name.length > 28) return 30;
@@ -32,30 +50,42 @@ const nameFontSize = (name) => {
   return 48;
 };
 
-const textLayer = async ({ text, font, height, top }) => {
-  await fontReadyPromise;
-  const buffer = await sharp({
-    text: {
-      text: `<span foreground="#0B1F3A">${escapePango(text)}</span>`,
-      font,
-      fontfile: fontPath,
-      width: canvasWidth - 32,
-      height,
-      align: "centre",
-      rgba: true,
-      wrap: "none",
+const textLayer = async ({ text, fontSize, fontWeight, height, top }) => {
+  const fonts = await fontsReadyPromise;
+  const svg = await satori({
+    type: "div",
+    props: {
+      children: text,
+      style: {
+        alignItems: "center",
+        color: "#0B1F3A",
+        display: "flex",
+        fontFamily: "Geist",
+        fontSize,
+        fontWeight,
+        height,
+        justifyContent: "center",
+        lineHeight: 1,
+        overflow: "hidden",
+        whiteSpace: "nowrap",
+        width: canvasWidth,
+      },
     },
-  }).png().toBuffer();
-  const { width = canvasWidth } = await sharp(buffer).metadata();
-  return { input: buffer, left: Math.max(0, Math.round((canvasWidth - width) / 2)), top };
+  }, {
+    height,
+    fonts,
+    width: canvasWidth,
+  });
+  if (!svg.includes("<path")) throw new Error("The ticket text could not be converted to glyph paths.");
+  return { input: Buffer.from(svg), left: 0, top };
 };
 
 const createTextLayers = (name, ticketId) => {
   const displayName = String(name ?? "").trim().toUpperCase() || "ATTENDEE";
   const displayTicket = String(ticketId ?? "").trim() || "TICKET";
   return Promise.all([
-    textLayer({ text: displayName, font: `Geist Variable SemiBold ${nameFontSize(displayName)}`, height: 94, top: 16 }),
-    textLayer({ text: displayTicket, font: "Geist Variable Medium 30", height: 58, top: 106 }),
+    textLayer({ text: displayName, fontSize: nameFontSize(displayName), fontWeight: 600, height: 94, top: nameTextTop }),
+    textLayer({ text: displayTicket, fontSize: 30, fontWeight: 400, height: 58, top: ticketTextTop }),
   ]);
 };
 

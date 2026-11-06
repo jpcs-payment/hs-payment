@@ -58,3 +58,13 @@ Open `/admin/attendance` after signing in. Start the camera and scan an approved
 ```bash
 npm run build
 ```
+
+## Ticket attachment check
+
+Generate and validate a server-side sample attachment, including its PNG dimensions, rendered text regions, and QR payload:
+
+```bash
+npm run test:ticket
+```
+
+Set `TICKET_TEST_OUTPUT` to keep the generated PNG at a specific path instead of the system temporary directory.

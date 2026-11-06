@@ -37,10 +37,18 @@ const loadImage = (src: string) => new Promise<HTMLImageElement>((resolve, rejec
 });
 
 const nameFontSize = (name: string) => name.length > 28 ? 30 : name.length > 22 ? 36 : name.length > 16 ? 42 : 48;
+const waitForTicketFonts = (nameSize: number) => {
+  if (!document.fonts?.load) return Promise.resolve();
+  return Promise.all([
+    document.fonts.load(`600 ${nameSize}px "Geist Variable"`),
+    document.fonts.load('400 30px "Geist Variable"'),
+  ]).then(() => undefined);
+};
 
 export const createBrandedQrDataUrl = async (value: string, name: string, ticketId: string) => {
   const displayName = name.trim();
   const displayTicket = ticketId.trim();
+  const displayNameFontSize = nameFontSize(displayName);
   const [qrDataUrl, logo] = await Promise.all([
     QRCode.toDataURL(value, {
       width: qrSize,
@@ -49,6 +57,7 @@ export const createBrandedQrDataUrl = async (value: string, name: string, ticket
       color: { dark: "#0B1F3A", light: "#FFFFFF" },
     }),
     loadImage(jpcsLogo),
+    waitForTicketFonts(displayNameFontSize),
   ]);
   const qr = await loadImage(qrDataUrl);
   const canvas = document.createElement("canvas");
@@ -61,7 +70,7 @@ export const createBrandedQrDataUrl = async (value: string, name: string, ticket
   context.textAlign = "center";
   context.textBaseline = "middle";
   context.fillStyle = "#0B1F3A";
-  context.font = `600 ${nameFontSize(displayName)}px "Geist Variable", Arial, Helvetica, sans-serif`;
+  context.font = `600 ${displayNameFontSize}px "Geist Variable", Arial, Helvetica, sans-serif`;
   context.fillText(displayName.toUpperCase() || "ATTENDEE", canvasWidth / 2, 76);
   context.font = '400 30px "Geist Variable", Arial, Helvetica, sans-serif';
   context.fillText(displayTicket || "TICKET", canvasWidth / 2, 126);

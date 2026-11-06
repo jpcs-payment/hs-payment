@@ -5,6 +5,14 @@
       "schedule": "0 3 * * *"
     }
   ],
+  "functions": {
+    "api/**/*.mjs": {
+      "includeFiles": [
+        "jpcslogo/cropped_circle_image.png",
+        "node_modules/@fontsource/geist/files/*.woff2"
+      ]
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

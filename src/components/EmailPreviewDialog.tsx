@@ -47,7 +47,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
     }
     setSending(true);
     try {
-      await sendApprovalEmail(currentPayment, currentPayment.generateQr !== false ? qrDataUrls : undefined);
+      await sendApprovalEmail(currentPayment);
       pushToast({ tone: "success", title: "Confirmation email sent", message: currentPayment.generateQr !== false ? `The receipt and ${attendees.length} attendance QR${attendees.length === 1 ? "" : "s"} were sent to ${currentPayment.email}.` : `The confirmation was sent to ${currentPayment.email}.` });
     } catch (error) {
       pushToast({ tone: "error", title: "Email delivery failed", message: error instanceof Error ? error.message : "Check the local Brevo configuration and try again." });
