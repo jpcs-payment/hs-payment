@@ -42,6 +42,7 @@ function LegacyPaymentsPage() {
   const [rejectReason, setRejectReason] = useState("");
   const [rejectError, setRejectError] = useState("");
   const [emailPayment, setEmailPayment] = useState<PaymentRecord | null>(null);
+  const [emailSending, setEmailSending] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [reviewPage, setReviewPage] = useState(1);
   const [unpaidPage, setUnpaidPage] = useState(1);
@@ -146,6 +147,7 @@ function LegacyPaymentsPage() {
       setApproveId(null);
       if (!approved) return;
       setEmailPayment(approved);
+      setEmailSending(true);
       try {
         await sendApprovalEmail(approved);
         pushToast({
@@ -162,6 +164,8 @@ function LegacyPaymentsPage() {
               ? error.message
               : "Retry the email from the payment details.",
         });
+      } finally {
+        setEmailSending(false);
       }
     } catch (error) {
       pushToast({
@@ -472,6 +476,7 @@ function LegacyPaymentsPage() {
         open={Boolean(emailPayment)}
         onClose={() => setEmailPayment(null)}
         payment={emailPayment}
+        autoSending={emailSending}
       />
     </div>
   );

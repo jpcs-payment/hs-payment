@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertCircle, CheckCircle2, Mail, Send, ShieldCheck, Ticket } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Mail, Send, ShieldCheck, Ticket } from "lucide-react";
 import { Dialog, Button } from "./ui";
 import { formatCurrency, formatDateTime } from "../lib/utils";
 import type { PaymentRecord } from "../types";
@@ -9,7 +9,7 @@ import { useApp } from "../context/AppContext";
 import { useToast } from "./Toast";
 import { getPaymentAttendees } from "../lib/payment";
 
-export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; onClose: () => void; payment: PaymentRecord | null }) {
+export function EmailPreviewDialog({ open, onClose, payment, autoSending = false }: { open: boolean; onClose: () => void; payment: PaymentRecord | null; autoSending?: boolean }) {
   const { data, sendApprovalEmail } = useApp();
   const { pushToast } = useToast();
   const [qrDataUrls, setQrDataUrls] = useState<Record<string, string>>({});
@@ -19,6 +19,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
   const currentPayment = payment && (payment.status !== "Approved" || storedPayment?.status === "Approved") ? storedPayment ?? payment : payment;
   const deliveryStatus = currentPayment?.emailDeliveryStatus ?? "idle";
   const attendees = useMemo(() => currentPayment ? getPaymentAttendees(currentPayment) : [], [currentPayment]);
+  const isSending = sending || autoSending || deliveryStatus === "Sending";
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +41,7 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
   if (!currentPayment) return null;
 
   const handleSend = async () => {
-    if (currentPayment.status !== "Approved" || sending || deliveryStatus === "Sending" || deliveryStatus === "Sent") return;
+    if (currentPayment.status !== "Approved" || isSending || deliveryStatus === "Sent") return;
     if (currentPayment.generateQr !== false && attendees.some((attendee) => !qrDataUrls[attendee.id])) {
       pushToast({ tone: "error", title: "QR images are still loading", message: qrError || "Wait for the QR images to finish generating, then try again." });
       return;
@@ -59,15 +60,15 @@ export function EmailPreviewDialog({ open, onClose, payment }: { open: boolean; 
   return (
     <Dialog open={open} onClose={onClose} title="Payment confirmation email" description={currentPayment.generateQr !== false ? "The email includes the attendee list and one QR attachment for every named attendee." : "The email includes the attendee list and payment confirmation."} size="lg">
       <div className="space-y-5">
-        <div className={`flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${deliveryStatus === "Sent" ? "border-emerald-200 bg-emerald-50" : deliveryStatus === "Failed" ? "border-red-200 bg-red-50" : deliveryStatus === "Sending" ? "border-blue-200 bg-blue-50" : "border-amber-200 bg-amber-50"}`}>
+        <div className={`flex flex-col gap-4 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between ${deliveryStatus === "Sent" ? "border-emerald-200 bg-emerald-50" : isSending ? "border-blue-200 bg-blue-50" : deliveryStatus === "Failed" ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
           <div className="flex items-start gap-3">
-            {deliveryStatus === "Sent" ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" /> : deliveryStatus === "Failed" ? <AlertCircle className="mt-0.5 h-5 w-5 text-red-700" /> : <Mail className="mt-0.5 h-5 w-5 text-blue-700" />}
+            {deliveryStatus === "Sent" ? <CheckCircle2 className="mt-0.5 h-5 w-5 text-emerald-700" /> : isSending ? <Loader2 className="mt-0.5 h-5 w-5 animate-spin text-blue-700" /> : deliveryStatus === "Failed" ? <AlertCircle className="mt-0.5 h-5 w-5 text-red-700" /> : <Mail className="mt-0.5 h-5 w-5 text-blue-700" />}
             <div>
-              <p className={`text-xs font-bold uppercase tracking-[0.08em] ${deliveryStatus === "Sent" ? "text-emerald-900" : deliveryStatus === "Failed" ? "text-red-900" : "text-navy-900"}`}>{deliveryStatus === "Sent" ? "EMAIL SENT" : deliveryStatus === "Failed" ? "DELIVERY FAILED" : deliveryStatus === "Sending" ? "SENDING EMAIL" : "READY TO SEND"}</p>
-              <p className="mt-1 break-words text-[11px] leading-5 text-slate-600 [overflow-wrap:anywhere]">{deliveryStatus === "Sent" ? `Confirmation already sent to ${currentPayment.email}${currentPayment.emailSentAt ? ` at ${formatDateTime(currentPayment.emailSentAt)}` : ""}.` : deliveryStatus === "Failed" ? currentPayment.emailDeliveryError ?? "Brevo could not deliver this email." : `Payment confirmation will be sent to ${currentPayment.email}.`}</p>
+              <p className={`text-xs font-bold uppercase tracking-[0.08em] ${deliveryStatus === "Sent" ? "text-emerald-900" : deliveryStatus === "Failed" && !isSending ? "text-red-900" : "text-navy-900"}`}>{deliveryStatus === "Sent" ? "EMAIL SENT" : isSending ? "SENDING EMAIL" : deliveryStatus === "Failed" ? "DELIVERY FAILED" : "READY TO SEND"}</p>
+              <p className="mt-1 break-words text-[11px] leading-5 text-slate-600 [overflow-wrap:anywhere]">{deliveryStatus === "Sent" ? `Confirmation already sent to ${currentPayment.email}${currentPayment.emailSentAt ? ` at ${formatDateTime(currentPayment.emailSentAt)}` : ""}.` : isSending ? `Confirmation is being sent to ${currentPayment.email}.` : deliveryStatus === "Failed" ? currentPayment.emailDeliveryError ?? "Brevo could not deliver this email." : `Payment confirmation will be sent to ${currentPayment.email}.`}</p>
             </div>
           </div>
-          {deliveryStatus !== "Sent" ? <Button size="sm" variant="primary" loading={sending || deliveryStatus === "Sending"} onClick={handleSend}><Send className="h-3.5 w-3.5" />Send email</Button> : null}
+          {deliveryStatus !== "Sent" ? <Button size="sm" variant="primary" loading={isSending} onClick={handleSend}><Send className="h-3.5 w-3.5" />Send email</Button> : null}
         </div>
 
         <div className="overflow-hidden rounded-2xl border border-line bg-white shadow-sm">
