@@ -1,4 +1,5 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "crons": [
     {
       "path": "/api/purge-recently-deleted",
@@ -7,10 +8,7 @@
   ],
   "functions": {
     "api/**/*.mjs": {
-      "includeFiles": [
-        "jpcslogo/cropped_circle_image.png",
-        "node_modules/@fontsource/geist/files/*.woff2"
-      ]
+      "includeFiles": "{jpcslogo/cropped_circle_image.png,node_modules/@fontsource/geist/files/*.woff2}"
     }
   },
   "rewrites": [
