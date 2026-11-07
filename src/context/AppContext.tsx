@@ -71,6 +71,7 @@ const maxOfferingImageBytes = 5 * 1024 * 1024;
 const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
 const getPublicSiteKey = (): PaymentSiteKey => typeof window !== "undefined" && window.location.pathname.startsWith("/test-payment") ? "test-payment" : "public-payment";
 const defaultPublicSiteMessage = "The payment portal is temporarily closed while we update it. Please check back soon.";
+const isAdminRoute = () => typeof window !== "undefined" && window.location.pathname.startsWith("/admin");
 
 const toAllocations = (value: unknown, amount: number): PaymentAllocation[] => {
   if (Array.isArray(value)) {
@@ -298,12 +299,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setDataError(null);
     try {
       const client = requireSupabase();
+      const loadAdminData = admin && isAdminRoute();
       const offeringsQuery = client.from("hs-offerings").select("*").order("created_at", { ascending: true });
       const methodsQuery = client.from("hs-payment-methods").select("*").order("id", { ascending: true });
-      const siteKey = admin ? "public-payment" : getPublicSiteKey();
+      const siteKey = loadAdminData ? "public-payment" : getPublicSiteKey();
       const siteSettingsQuery = client.from("hs-site-settings").select("*").eq("site_key", siteKey).maybeSingle();
       const sectionsQuery = client.from("hs-sections").select("section").order("section", { ascending: true });
-      if (!admin) {
+      if (!loadAdminData) {
         offeringsQuery.eq("active", true).is("archived_at", null);
         methodsQuery.eq("enabled", true);
       }
@@ -322,7 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const paymentMethods = (methodsResponse.data ?? []).map(mapMethod);
       const sections = Array.from(new Set((sectionsResponse.data ?? []).map((row) => String(row.section ?? "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
       const siteSettings = mapSiteSettings(siteSettingsResponse.data, siteKey);
-      if (!admin) {
+      if (!loadAdminData) {
         setData((current) => ({ ...current, sections, offerings, paymentMethods, siteSettings }));
         return;
       }
