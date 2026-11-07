@@ -64,7 +64,7 @@ function LegacyPaymentsPage() {
           (payment) => method === "All methods" || payment.method === method,
         )
         .filter((payment) =>
-             `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`
+             `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName} ${payment.section ?? ""} ${payment.course ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase()),
         )
@@ -83,7 +83,7 @@ function LegacyPaymentsPage() {
           (payment) => method === "All methods" || payment.method === method,
         )
         .filter((payment) =>
-           `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName}`
+           `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => attendee.name).join(" ")} ${payment.email} ${payment.offeringName} ${payment.section ?? ""}`
             .toLowerCase()
             .includes(query.toLowerCase()),
         )
@@ -593,7 +593,7 @@ function PaymentDetails({
   onReject: () => void;
   onEmail: () => void;
 }) {
-  const schoolDetails = `${payment.schoolLevel} · ${payment.yearLevel}${payment.strand ? ` · ${payment.strand}` : ""}${payment.course ? ` · ${payment.course}` : ""}`;
+  const schoolDetails = `${payment.schoolLevel} · ${payment.yearLevel}${payment.section ? ` · ${payment.section}` : ""}${payment.strand ? ` · ${payment.strand}` : ""}${payment.course ? ` · ${payment.course}` : ""}`;
   const attendees = getPaymentAttendees(payment);
   const isPayLaterUnpaid =
     payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid";

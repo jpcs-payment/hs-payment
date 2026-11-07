@@ -15,6 +15,7 @@ import type {
   PaymentOfferingImageUpdate,
   PaymentOffering,
   PaymentRecord,
+  PaymentSiteKey,
   PublicSiteSettings,
   SchoolLevel,
   Session,
@@ -22,15 +23,19 @@ import type {
   TicketCheckInResult,
 } from "../types";
 
+export type AdminSiteFilter = "all" | PaymentSiteKey;
+
 interface AppContextValue {
   data: AppData;
   session: Session | null;
   authLoading: boolean;
   dataLoading: boolean;
   dataError: string | null;
+  adminSiteFilter: AdminSiteFilter;
   login: (session: Session) => void;
   logout: () => void;
   retryData: () => Promise<void>;
+  setAdminSiteFilter: (filter: AdminSiteFilter) => Promise<void>;
   signInAdmin: (email: string, password: string) => Promise<void>;
   submitPayment: (input: NewPaymentInput) => Promise<PaymentRecord>;
   approvePayment: (paymentId: string) => Promise<PaymentRecord | undefined>;
@@ -67,7 +72,7 @@ const offeringImageBucket = "hs-offering-images";
 const paymentProofBucket = "hs-payment-proofs";
 const maxOfferingImageBytes = 5 * 1024 * 1024;
 const offeringImageTypes = new Set(["image/jpeg", "image/png", "image/webp"]);
-const publicSiteKey = "public-payment";
+const getPublicSiteKey = (): PaymentSiteKey => typeof window !== "undefined" && window.location.pathname.startsWith("/test-payment") ? "test-payment" : "public-payment";
 const defaultPublicSiteMessage = "The payment portal is temporarily closed while we update it. Please check back soon.";
 
 const toAllocations = (value: unknown, amount: number): PaymentAllocation[] => {
@@ -127,8 +132,8 @@ const mapMethod = (row: DbRow): PaymentMethodConfig => ({
   qrImage: row.qr_image ?? undefined,
 });
 
-const mapSiteSettings = (row?: DbRow | null): PublicSiteSettings => ({
-  siteKey: publicSiteKey,
+const mapSiteSettings = (row?: DbRow | null, fallbackSiteKey: PaymentSiteKey = "public-payment"): PublicSiteSettings => ({
+  siteKey: row?.site_key === "test-payment" ? "test-payment" : fallbackSiteKey,
   isOpen: row ? Boolean(row.is_open) : false,
   message: String(row?.public_message ?? defaultPublicSiteMessage),
   allowMultipleNames: Boolean(row?.allow_multiple_names),
@@ -140,10 +145,12 @@ const mapSiteSettings = (row?: DbRow | null): PublicSiteSettings => ({
 
 const mapPayer = (row: DbRow): Student => ({
   id: String(row.id),
+  siteKey: row.site_key === "test-payment" ? "test-payment" : "public-payment",
   name: String(row.name ?? ""),
   email: String(row.email ?? ""),
   schoolLevel: row.school_level,
   yearLevel: String(row.year_level ?? ""),
+  section: row.section ?? undefined,
   strand: row.strand ?? undefined,
   course: row.course ?? undefined,
   avatar: String(row.avatar ?? initials(String(row.name ?? ""))),
@@ -171,12 +178,14 @@ const mapPayment = (row: DbRow, payers: Map<string, Student>, offerings: Map<str
   const attendeeCount = Math.max(1, Number(row.attendee_count) || attendees.length || 1);
   return {
     id: String(row.id),
+    siteKey: row.site_key === "test-payment" ? "test-payment" : payer?.siteKey ?? "public-payment",
     reference: String(row.reference),
     studentId: String(row.payer_id),
     studentName: firstAttendee?.name ?? payer?.name ?? String(row.student_name ?? ""),
     email: payer?.email ?? String(row.payer_email ?? row.email ?? ""),
     schoolLevel: payer?.schoolLevel ?? row.school_level,
     yearLevel: payer?.yearLevel ?? String(row.year_level ?? ""),
+    section: payer?.section ?? row.section ?? undefined,
     strand: payer?.strand ?? row.strand ?? undefined,
     course: payer?.course ?? row.course ?? undefined,
     offeringId: String(row.offering_id),
@@ -275,15 +284,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(Boolean(supabase));
   const [dataError, setDataError] = useState<string | null>(null);
+  const [adminSiteFilter, setAdminSiteFilterState] = useState<AdminSiteFilter>("public-payment");
 
-  const loadData = async (admin = false) => {
+  const loadData = async (admin = false, requestedSiteFilter: AdminSiteFilter = adminSiteFilter) => {
     setDataLoading(true);
     setDataError(null);
     try {
       const client = requireSupabase();
       const offeringsQuery = client.from("hs-offerings").select("*").order("created_at", { ascending: true });
       const methodsQuery = client.from("hs-payment-methods").select("*").order("id", { ascending: true });
-      const siteSettingsQuery = client.from("hs-site-settings").select("*").eq("site_key", publicSiteKey).maybeSingle();
+      const siteKey = admin ? "public-payment" : getPublicSiteKey();
+      const siteSettingsQuery = client.from("hs-site-settings").select("*").eq("site_key", siteKey).maybeSingle();
+      const sectionsQuery = client.from("hs-sections").select("section").order("section", { ascending: true });
       if (!admin) {
         offeringsQuery.eq("active", true).is("archived_at", null);
         methodsQuery.eq("enabled", true);
@@ -296,18 +308,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (offeringsResponse.error) throw offeringsResponse.error;
       if (methodsResponse.error) throw methodsResponse.error;
       if (siteSettingsResponse.error) throw siteSettingsResponse.error;
+      const sectionsResponse = await sectionsQuery;
+      if (sectionsResponse.error) throw sectionsResponse.error;
 
       const offerings = (offeringsResponse.data ?? []).map(mapOffering);
       const paymentMethods = (methodsResponse.data ?? []).map(mapMethod);
-      const siteSettings = mapSiteSettings(siteSettingsResponse.data);
+      const sections = Array.from(new Set((sectionsResponse.data ?? []).map((row) => String(row.section ?? "").trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+      const siteSettings = mapSiteSettings(siteSettingsResponse.data, siteKey);
       if (!admin) {
-        setData((current) => ({ ...current, offerings, paymentMethods, siteSettings }));
+        setData((current) => ({ ...current, sections, offerings, paymentMethods, siteSettings }));
         return;
       }
 
       const [payersResponse, paymentsResponse, attendeesResponse] = await Promise.all([
-        client.from("hs-payers").select("*").order("created_at", { ascending: false }),
-        client.from("hs-payments").select("*").order("submitted_at", { ascending: false }),
+        (requestedSiteFilter === "all" ? client.from("hs-payers").select("*") : client.from("hs-payers").select("*").eq("site_key", requestedSiteFilter)).order("created_at", { ascending: false }),
+        (requestedSiteFilter === "all" ? client.from("hs-payments").select("*") : client.from("hs-payments").select("*").eq("site_key", requestedSiteFilter)).order("submitted_at", { ascending: false }),
         client.from("hs-payment-attendees").select("*").order("position", { ascending: true }),
       ]);
       if (payersResponse.error) throw payersResponse.error;
@@ -340,7 +355,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (offering?.deletedAt) return false;
           return !getPaymentPayerIds(payment).some((payerId) => payers.get(payerId)?.deletedAt);
         });
-      setData({ students, offerings, paymentMethods, siteSettings, payments, developers: [] });
+       setData({ students, sections, offerings, paymentMethods, siteSettings, payments, developers: [] });
     } catch (error) {
       const message = error instanceof Error ? error.message : "The payment data could not be loaded.";
       setDataError(message);
@@ -402,7 +417,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const retryData = async () => {
     try {
-      await loadData(session?.role === "admin");
+      await loadData(session?.role === "admin", adminSiteFilter);
+    } catch {
+      // The load error is exposed through dataError for the retry UI.
+    }
+  };
+
+  const setAdminSiteFilter = async (filter: AdminSiteFilter) => {
+    setAdminSiteFilterState(filter);
+    if (session?.role !== "admin") return;
+    try {
+      await loadData(true, filter);
     } catch {
       // The load error is exposed through dataError for the retry UI.
     }
@@ -435,6 +460,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const attendeeNames = (input.attendeeNames?.length ? input.attendeeNames : [input.studentName])
       .map((name) => name.trim())
       .filter(Boolean);
+    const section = input.section.trim();
+    if (!section || section.length > 80) throw new Error("Enter a valid section.");
     const maxNames = data.siteSettings.allowMultipleNames ? data.siteSettings.maxNames : 1;
     if (!attendeeNames.length || attendeeNames.length > maxNames) {
       throw new Error(`Add between 1 and ${maxNames} attendee name${maxNames === 1 ? "" : "s"}.`);
@@ -447,14 +474,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       response = await fetch("/api/submit-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payment: {
-            idempotencyKey: input.idempotencyKey,
-            studentName: attendeeNames[0],
-            attendeeNames,
-            email: input.email,
-            schoolLevel: input.schoolLevel,
-            yearLevel: input.yearLevel,
-            strand: input.strand,
+             body: JSON.stringify({ payment: {
+             idempotencyKey: input.idempotencyKey,
+             siteKey: data.siteSettings.siteKey,
+             studentName: attendeeNames[0],
+             attendeeNames,
+             email: input.email,
+             schoolLevel: input.schoolLevel,
+             yearLevel: input.yearLevel,
+             section,
+             strand: input.strand,
             course: input.course,
             offeringId: offering.id,
             method: input.method,
@@ -476,10 +505,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!row.id) throw new Error("The payment was not returned by the secure submission service.");
     const payer: Student = {
       id: String(row.payer_id),
+      siteKey: data.siteSettings.siteKey,
       name: attendeeNames[0],
       email: input.email.trim(),
       schoolLevel: input.schoolLevel,
       yearLevel: input.yearLevel,
+      section,
       strand: input.strand,
       course: input.course,
       avatar: initials(attendeeNames[0]),
@@ -491,10 +522,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!payerId) return;
       attendeePayers.set(payerId, {
         id: payerId,
+        siteKey: data.siteSettings.siteKey,
         name: attendee.name,
         email: input.email.trim(),
         schoolLevel: input.schoolLevel,
         yearLevel: input.yearLevel,
+        section,
         strand: input.strand,
         course: input.course,
         avatar: initials(attendee.name),
@@ -503,6 +536,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const payment = mapPayment(row, attendeePayers, new Map([[offering.id, offering]]), undefined, inlineAttendees);
     setData((current) => ({
       ...current,
+      sections: current.sections.includes(section) ? current.sections : [...current.sections, section].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })),
       students: [...attendeePayers.values(), ...current.students.filter((student) => !attendeePayers.has(student.id))],
       payments: [payment, ...current.payments.filter((item) => item.id !== payment.id)],
     }));
@@ -966,7 +1000,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     if (error) throw error;
     const updatedRow = (Array.isArray(row) ? row[0] : row) as DbRow | undefined;
-    const nextSettings = updatedRow ? mapSiteSettings(updatedRow) : { ...settings, maxNames, visibleSchoolLevels };
+    const nextSettings = updatedRow ? mapSiteSettings(updatedRow, "public-payment") : { ...settings, maxNames, visibleSchoolLevels };
     setData((current) => ({ ...current, siteSettings: nextSettings }));
   };
 
@@ -976,7 +1010,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, moveOfferingToRecentlyDeleted, restoreOffering, deleteOfferingPermanently, movePayerToRecentlyDeleted, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, adminSiteFilter, login, logout, retryData, setAdminSiteFilter, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, moveOfferingToRecentlyDeleted, restoreOffering, deleteOfferingPermanently, movePayerToRecentlyDeleted, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

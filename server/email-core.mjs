@@ -53,7 +53,7 @@ const formatDateTime = (value) => new Intl.DateTimeFormat("en-PH", {
   timeZone: "Asia/Manila",
 }).format(new Date(value));
 
-const paymentDetails = (payment) => [payment.schoolLevel, payment.yearLevel, payment.strand, payment.course].filter(Boolean).join(" · ") || "Not provided";
+const paymentDetails = (payment) => [payment.schoolLevel, payment.yearLevel, payment.section, payment.strand, payment.course].filter(Boolean).join(" · ") || "Not provided";
 const attendeesFor = (payment) => Array.isArray(payment?.attendees) && payment.attendees.length
   ? payment.attendees
   : [{ id: `legacy-${payment?.id}`, name: payment?.studentName, position: 1, ticketId: payment?.ticketId, ticketQrValue: payment?.ticketQrValue }];
@@ -192,8 +192,9 @@ const verifyPaymentRecord = async (payment, payLater) => {
      && parentTicketMatches
     && Number(storedPayment.amount) === Number(payment.amount)
     && String(storedPayment.school_level ?? "") === String(payment.schoolLevel ?? "")
-    && String(storedPayment.year_level ?? "") === String(payment.yearLevel ?? "")
-    && String(storedPayment.strand ?? "") === String(payment.strand ?? "")
+     && String(storedPayment.year_level ?? "") === String(payment.yearLevel ?? "")
+     && String(storedPayment.section ?? "") === String(payment.section ?? "")
+     && String(storedPayment.strand ?? "") === String(payment.strand ?? "")
     && String(storedPayment.course ?? "") === String(payment.course ?? "")
     && storedPayment.payment_mode === (payLater ? "PayLater" : "PayNow")
     && storedPayment.status === (payLater ? "Pending" : "Approved")
@@ -215,8 +216,9 @@ const verifyPaymentRecord = async (payment, payLater) => {
     method: storedPayment.method,
     allocations: storedPayment.allocations,
     schoolLevel: storedPayment.school_level,
-    yearLevel: String(storedPayment.year_level),
-    strand: storedPayment.strand ?? undefined,
+     yearLevel: String(storedPayment.year_level),
+     section: storedPayment.section ?? undefined,
+     strand: storedPayment.strand ?? undefined,
     course: storedPayment.course ?? undefined,
     paymentMode: storedPayment.payment_mode,
     paymentState: storedPayment.payment_state,

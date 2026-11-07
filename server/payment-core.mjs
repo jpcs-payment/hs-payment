@@ -9,6 +9,7 @@ const maxIpSubmissions = 20;
 const emailAlreadyUsedMessage = "email has been used";
 const duplicateEmailConstraint = "hs_payments_email_once_idx";
 const allowedStrands = new Set(["ABM", "GAS", "HUMSS", "STEM", "HE", "ICT"]);
+const allowedSiteKeys = new Set(["public-payment", "test-payment"]);
 
 const config = () => ({
   supabaseUrl: (process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? "").trim(),
@@ -46,12 +47,16 @@ const normalizeInput = (input) => {
   const email = typeof payment.email === "string" ? payment.email.trim().toLowerCase() : "";
   const schoolLevel = typeof payment.schoolLevel === "string" ? payment.schoolLevel : "";
   const yearLevel = typeof payment.yearLevel === "string" ? payment.yearLevel.trim() : "";
+  const section = typeof payment.section === "string" ? payment.section.trim() : "";
+  const siteKey = typeof payment.siteKey === "string" ? payment.siteKey : "public-payment";
   const method = typeof payment.method === "string" ? payment.method : "";
   const paymentMode = typeof payment.paymentMode === "string" ? payment.paymentMode : "";
   if (!studentName || studentName.length > 160) throw new PublicSubmissionError("A valid student name is required.");
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new PublicSubmissionError("A valid email address is required.");
   if (!yearLevel || yearLevel.length > 80) throw new PublicSubmissionError("A valid year level is required.");
+  if (!section || section.length > 80) throw new PublicSubmissionError("A valid section is required.");
   if (!["Junior High School", "Senior High School", "College"].includes(schoolLevel)) throw new PublicSubmissionError("The selected school level is invalid.");
+  if (!allowedSiteKeys.has(siteKey)) throw new PublicSubmissionError("The selected payment site is invalid.");
   if (!["Cash", "GCash", "MariBank"].includes(method)) throw new PublicSubmissionError("The selected payment method is invalid.");
   if (!["PayNow", "PayLater"].includes(paymentMode)) throw new PublicSubmissionError("The selected payment timing is invalid.");
   const strand = typeof payment.strand === "string" ? payment.strand.trim() : undefined;
@@ -64,7 +69,7 @@ const normalizeInput = (input) => {
   if (!attendeeNames.length || attendeeNames.some((name) => !name || name.length > 160)) throw new PublicSubmissionError("Each attendee must have a valid name.");
   if (new Set(attendeeNames.map((name) => name.toLowerCase())).size !== attendeeNames.length) throw new PublicSubmissionError("Each attendee name must be unique.");
   const idempotencyKey = typeof payment.idempotencyKey === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payment.idempotencyKey) ? payment.idempotencyKey : undefined;
-  return { idempotencyKey, studentName, attendeeNames, email, schoolLevel, yearLevel, strand, course, offeringId: payment.offeringId, method, paymentMode, proofImage };
+  return { idempotencyKey, siteKey, studentName, attendeeNames, email, schoolLevel, yearLevel, section, strand, course, offeringId: payment.offeringId, method, paymentMode, proofImage };
 };
 
 const hashValue = (value, secret) => createHash("sha256").update(`${secret}:${value}`).digest("hex");
@@ -102,15 +107,17 @@ export async function submitPayment(input, { requestKey } = {}) {
   const existingResponse = await client.from("hs-payments").select("*").eq("id", paymentId).maybeSingle();
   if (existingResponse.error) throw existingResponse.error;
   if (existingResponse.data) {
-    const payerResponse = await client.from("hs-payers").select("email,name,school_level,year_level,strand,course").eq("id", existingResponse.data.payer_id).maybeSingle();
+    const payerResponse = await client.from("hs-payers").select("email,name,site_key,school_level,year_level,section,strand,course").eq("id", existingResponse.data.payer_id).maybeSingle();
     if (payerResponse.error) throw payerResponse.error;
     const existingPayer = payerResponse.data;
     const existingPayment = await withAttendees(client, existingResponse.data);
     const existingNames = Array.isArray(existingPayment.attendees) ? existingPayment.attendees.map((attendee) => String(attendee.name).trim()) : [existingPayer?.name];
     const sameSubmission = existingPayer?.email === payment.email
+      && existingPayer?.site_key === payment.siteKey
       && JSON.stringify(existingNames) === JSON.stringify(payment.attendeeNames)
       && existingPayer.school_level === payment.schoolLevel
       && existingPayer.year_level === payment.yearLevel
+      && (existingPayer.section ?? undefined) === payment.section
       && (existingPayer.strand ?? undefined) === payment.strand
       && (existingPayer.course ?? undefined) === payment.course
       && existingResponse.data.offering_id === payment.offeringId
@@ -120,7 +127,7 @@ export async function submitPayment(input, { requestKey } = {}) {
     if (!sameSubmission) throw new PublicSubmissionError("This payment submission key is already in use.", 409);
     return existingPayment;
   }
-  const settingsResponse = await client.from("hs-site-settings").select("is_open,public_message,allow_multiple_names,max_names,visible_school_levels").eq("site_key", "public-payment").maybeSingle();
+  const settingsResponse = await client.from("hs-site-settings").select("is_open,public_message,allow_multiple_names,max_names,visible_school_levels").eq("site_key", payment.siteKey).maybeSingle();
   if (settingsResponse.error) throw settingsResponse.error;
   const siteSettings = settingsResponse.data;
   if (!siteSettings?.is_open) throw new PublicSubmissionError(siteSettings?.public_message || "The payment portal is temporarily closed while we update it. Please check back soon.", 423);
@@ -144,13 +151,15 @@ export async function submitPayment(input, { requestKey } = {}) {
       const { error } = await client.storage.from(paymentProofBucket).upload(proofPath, payment.proofImage.buffer, { contentType: payment.proofImage.mime, upsert: false });
       if (error) throw error;
     }
-    const { data, error } = await client.rpc("hs_submit_payment", {
+    const { data, error } = await client.rpc("hs_submit_payment_for_site", {
       p_payment_id: paymentId,
       p_payer_id: payerId,
+      p_site_key: payment.siteKey,
       p_student_name: payment.studentName,
       p_email: payment.email,
       p_school_level: payment.schoolLevel,
       p_year_level: payment.yearLevel,
+      p_section: payment.section,
       p_strand: payment.strand ?? null,
       p_course: payment.course ?? null,
       p_offering_id: payment.offeringId,

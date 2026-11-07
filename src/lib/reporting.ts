@@ -1,4 +1,4 @@
-import type { PaymentRecord } from "../types";
+import type { PaymentAttendee, PaymentRecord } from "../types";
 
 export interface AllocationSummary {
   recipient: string;
@@ -41,4 +41,47 @@ export const summarizeAllocations = (payments: PaymentRecord[]): AllocationSumma
       pending: roundMoney(summary.pending),
     }))
     .sort((a, b) => b.allocated - a.allocated || a.recipient.localeCompare(b.recipient));
+};
+
+export interface AttendanceReportEntry {
+  payment: PaymentRecord;
+  attendee: PaymentAttendee;
+}
+
+export interface AttendanceSectionGroup {
+  schoolLevel: string;
+  yearLevel: string;
+  strand: string;
+  section: string;
+  entries: AttendanceReportEntry[];
+}
+
+const reportLabel = (value: string | undefined, fallback: string) => value?.trim() || fallback;
+const reportKey = (value: string) => value.trim().toLocaleLowerCase();
+const naturalCompare = (left: string, right: string) => left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+
+export const groupAttendanceEntries = (entries: AttendanceReportEntry[]): AttendanceSectionGroup[] => {
+  const groups = new Map<string, AttendanceSectionGroup>();
+  entries.forEach((entry) => {
+    const group = {
+      schoolLevel: reportLabel(entry.payment.schoolLevel, "Unassigned school level"),
+      yearLevel: reportLabel(entry.payment.yearLevel, "Unassigned year level"),
+      strand: reportLabel(entry.payment.strand, "No strand"),
+      section: reportLabel(entry.payment.section, "Unassigned section"),
+    };
+    const key = [group.schoolLevel, group.yearLevel, group.strand, group.section].map(reportKey).join("|");
+    const current = groups.get(key) ?? { ...group, entries: [] };
+    current.entries.push(entry);
+    groups.set(key, current);
+  });
+
+  return Array.from(groups.values()).sort((left, right) =>
+    naturalCompare(left.schoolLevel, right.schoolLevel)
+    || naturalCompare(left.yearLevel, right.yearLevel)
+    || naturalCompare(left.strand, right.strand)
+    || naturalCompare(left.section, right.section),
+  ).map((group) => ({
+    ...group,
+    entries: [...group.entries].sort((left, right) => naturalCompare(left.attendee.name, right.attendee.name)),
+  }));
 };

@@ -26,7 +26,7 @@ export function TicketPage() {
   if (payment.status !== "Approved") return <div className="mx-auto max-w-2xl"><Card className="p-6 text-center sm:p-10"><span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-700"><FileText className="h-6 w-6" /></span><h2 className="mt-5 text-xl font-extrabold text-navy-900">Ticket pending approval</h2><p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">{payment.status === "Rejected" ? payment.rejectionReason : "This payment is still under review. The ticket preview will appear here after an admin approves it."}</p><div className="mt-5"><StatusBadge status={payment.status} /></div><div className="mt-7 flex flex-wrap justify-center gap-3"><Button variant="outline" onClick={() => navigate("/student/history")}>View history</Button><Button onClick={() => navigate("/student/payment")}>{payment.status === "Rejected" ? "Submit again" : "Back to payment"}</Button></div></Card></div>;
 
   const attendees = getPaymentAttendees(payment);
-  const schoolDetails = `${payment.schoolLevel} · ${payment.yearLevel}${payment.strand ? ` · ${payment.strand}` : ""}${payment.course ? ` · ${payment.course}` : ""}`;
+  const schoolDetails = `${payment.schoolLevel} · ${payment.yearLevel}${payment.section ? ` · ${payment.section}` : ""}${payment.strand ? ` · ${payment.strand}` : ""}${payment.course ? ` · ${payment.course}` : ""}`;
   const copyTicket = async (ticketId: string) => {
     if (navigator.clipboard) await navigator.clipboard.writeText(ticketId);
     pushToast({ tone: "success", title: "Ticket ID copied", message: "The ticket identifier is ready to paste." });

@@ -2,6 +2,8 @@ export type Role = "student" | "admin";
 
 export type SchoolLevel = "Junior High School" | "Senior High School" | "College";
 
+export type PaymentSiteKey = "public-payment" | "test-payment";
+
 export type PaymentMethod = "Cash" | "GCash" | "MariBank";
 
 export type PaymentStatus = "Pending" | "Approved" | "Rejected";
@@ -19,10 +21,12 @@ export interface PaymentAllocation {
 
 export interface Student {
   id: string;
+  siteKey: PaymentSiteKey;
   name: string;
   email: string;
   schoolLevel: SchoolLevel;
   yearLevel: string;
+  section?: string;
   strand?: string;
   course?: string;
   avatar: string;
@@ -39,7 +43,7 @@ export interface PaymentMethodConfig {
 }
 
 export interface PublicSiteSettings {
-  siteKey: string;
+  siteKey: PaymentSiteKey;
   isOpen: boolean;
   message: string;
   allowMultipleNames: boolean;
@@ -79,12 +83,14 @@ export interface PaymentOffering {
 
 export interface PaymentRecord {
   id: string;
+  siteKey: PaymentSiteKey;
   reference: string;
   studentId: string;
   studentName: string;
   email: string;
   schoolLevel: SchoolLevel;
   yearLevel: string;
+  section?: string;
   strand?: string;
   course?: string;
   offeringId: string;
@@ -132,6 +138,7 @@ export interface Developer {
 
 export interface AppData {
   students: Student[];
+  sections: string[];
   offerings: PaymentOffering[];
   paymentMethods: PaymentMethodConfig[];
   siteSettings: PublicSiteSettings;
@@ -154,6 +161,7 @@ export interface NewPaymentInput {
   email: string;
   schoolLevel: SchoolLevel;
   yearLevel: string;
+  section: string;
   strand?: string;
   course?: string;
   offeringId: string;

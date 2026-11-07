@@ -15,6 +15,7 @@ export interface PaymentFormState {
   attendeeNames: string[];
   schoolLevel: SchoolLevel;
   yearLevel: string;
+  section: string;
   strand: string;
   course: string;
   offeringId: string;
@@ -55,6 +56,7 @@ export function PaymentPage() {
     attendeeNames: [""],
     schoolLevel: "Junior High School",
     yearLevel: juniorYears[0],
+    section: "",
     strand: "",
     course: "",
     offeringId: activeOfferings[0]?.id ?? "",
@@ -74,6 +76,10 @@ export function PaymentPage() {
   const availableMethods = useMemo(() => selectedOffering?.availableMethods.filter((method) => data.paymentMethods.some((config) => config.id === method && config.enabled)) ?? [], [data.paymentMethods, selectedOffering]);
   const methodConfig = data.paymentMethods.find((method) => method.id === form.method);
   const yearOptions = yearsFor(form.schoolLevel);
+  const sectionSuggestions = useMemo(
+    () => [...data.sections].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" })),
+    [data.sections],
+  );
   const isPayLater = form.paymentMode === "PayLater";
   const isCashless = form.method === "GCash" || form.method === "MariBank";
   const payLaterAvailable = payLaterAvailableFor(selectedOffering, form.method);
@@ -152,7 +158,7 @@ export function PaymentPage() {
   };
 
   const resetForm = () => {
-    setForm({ email: "", attendeeNames: [""], schoolLevel: "Junior High School", yearLevel: juniorYears[0], strand: "", course: "", offeringId: activeOfferings[0]?.id ?? "", method: "", paymentMode: "PayNow", proofImage: "" });
+    setForm({ email: "", attendeeNames: [""], schoolLevel: "Junior High School", yearLevel: juniorYears[0], section: "", strand: "", course: "", offeringId: activeOfferings[0]?.id ?? "", method: "", paymentMode: "PayNow", proofImage: "" });
     setErrors({});
     setSubmittedPayment(null);
     setSubmissionTime(new Date());
@@ -168,9 +174,10 @@ export function PaymentPage() {
     else if (new Set(names.map((name) => name.toLowerCase())).size !== names.length) nextErrors.attendeeNames = "Each attendee name must be unique.";
     else if (names.length > maxNames) nextErrors.attendeeNames = `Maximum of ${maxNames} attendee${maxNames === 1 ? "" : "s"} per transaction.`;
     if (!form.yearLevel) nextErrors.yearLevel = "Choose a year level.";
+    if (!form.section.trim()) nextErrors.section = "Enter a section.";
     if (form.schoolLevel === "Senior High School" && !form.strand) nextErrors.strand = "Choose a strand.";
     if (form.schoolLevel === "College" && !form.course.trim()) nextErrors.course = "Enter your course or program.";
-    setErrors((current) => ({ ...current, ...nextErrors, ...(nextErrors.email ? {} : { email: undefined }), ...(nextErrors.attendeeNames ? {} : { attendeeNames: undefined }), ...(nextErrors.yearLevel ? {} : { yearLevel: undefined }), ...(nextErrors.strand ? {} : { strand: undefined }), ...(nextErrors.course ? {} : { course: undefined }) }));
+    setErrors((current) => ({ ...current, ...nextErrors, ...(nextErrors.email ? {} : { email: undefined }), ...(nextErrors.attendeeNames ? {} : { attendeeNames: undefined }), ...(nextErrors.yearLevel ? {} : { yearLevel: undefined }), ...(nextErrors.section ? {} : { section: undefined }), ...(nextErrors.strand ? {} : { strand: undefined }), ...(nextErrors.course ? {} : { course: undefined }) }));
     return Object.keys(nextErrors).length === 0;
   };
 
@@ -233,6 +240,7 @@ export function PaymentPage() {
         email: form.email.trim(),
         schoolLevel: form.schoolLevel,
         yearLevel: form.yearLevel,
+        section: form.section.trim(),
         strand: form.schoolLevel === "Senior High School" ? form.strand : undefined,
         course: form.schoolLevel === "College" ? form.course.trim() : undefined,
         offeringId: selectedOffering.id,
@@ -293,7 +301,7 @@ export function PaymentPage() {
     void advanceStep();
   };
 
-  const summarySchoolDetails = `${form.schoolLevel} · ${form.yearLevel}${form.strand ? ` · ${form.strand}` : ""}${form.course ? ` · ${form.course}` : ""}`;
+  const summarySchoolDetails = `${form.schoolLevel} · ${form.yearLevel} · ${form.section.trim() || "Section not entered"}${form.strand ? ` · ${form.strand}` : ""}${form.course ? ` · ${form.course}` : ""}`;
   const siteClosed = !data.siteSettings.isOpen;
 
   if (dataLoading) return <PaymentPageSkeleton />;
@@ -301,7 +309,8 @@ export function PaymentPage() {
 
   return (
     <div className="payment-form mx-auto min-w-0 max-w-[1180px] space-y-6 overflow-x-hidden">
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+       {data.siteSettings.siteKey === "test-payment" ? <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-900"><strong>Test payment site.</strong> Submissions here are for testing and are labeled separately in the admin workspace.</div> : null}
+       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
          <div><h2 className="text-2xl font-extrabold tracking-[-0.035em] text-navy-900 sm:text-3xl">Complete your payment</h2></div>
       </div>
 
@@ -310,7 +319,7 @@ export function PaymentPage() {
        {siteClosed ? <SiteClosedCard message={data.siteSettings.message} /> : !activeOfferings.length ? <Card className="p-8 text-center"><h3 className="text-base font-extrabold text-navy-900">No payment types are available</h3><p className="mt-2 text-sm text-slate-500">Please check back after the JPCS admin publishes a payment type.</p></Card> : step === "paid" && submittedPayment ? <PaymentCompleteContent payment={submittedPayment} onNewPayment={resetForm} /> : <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <form onSubmit={handleSubmit} className="min-w-0 space-y-6">
           <Card className="animate-fade-up p-5 sm:p-7">
-             {step === "details" ? <CompactStudentDetailsStep form={form} errors={errors} yearOptions={yearOptions} schoolLevels={visibleSchoolLevels} maxNames={maxNames} allowMultipleNames={allowMultipleNames} onChange={updateForm} onNameChange={updateAttendeeName} onAddName={addAttendeeName} onRemoveName={removeAttendeeName} onSchoolLevelChange={changeSchoolLevel} /> : null}
+             {step === "details" ? <CompactStudentDetailsStep form={form} errors={errors} yearOptions={yearOptions} sectionSuggestions={sectionSuggestions} schoolLevels={visibleSchoolLevels} maxNames={maxNames} allowMultipleNames={allowMultipleNames} onChange={updateForm} onNameChange={updateAttendeeName} onAddName={addAttendeeName} onRemoveName={removeAttendeeName} onSchoolLevelChange={changeSchoolLevel} /> : null}
             {step === "type" ? <PaymentTypeStep offerings={eligibleOfferings} selectedOffering={selectedOffering} schoolLevel={form.schoolLevel} error={errors.offeringId} onSelect={(offeringId) => updateForm("offeringId", offeringId)} /> : null}
             {step === "method" ? <PaymentMethodStep form={form} availableMethods={availableMethods} method={form.method} methodConfig={methodConfig} paymentMode={form.paymentMode} selectedOffering={selectedOffering} totalAmount={totalAmount} attendeeCount={Math.max(attendeeCount, 1)} isPayLater={isPayLater} isCashless={isCashless} errors={errors} proofImage={form.proofImage} onMethodChange={changeMethod} onModeChange={(mode) => updateForm("paymentMode", mode)} onChange={updateForm} onProofUpload={handleProofUpload} onProofClear={() => updateForm("proofImage", "")} /> : null}
             {step === "review" ? <ReviewPaymentStep form={form} selectedOffering={selectedOffering} totalAmount={totalAmount} isPayLater={isPayLater} summarySchoolDetails={summarySchoolDetails} submissionTime={submissionTime} /> : null}
@@ -336,7 +345,7 @@ function SiteClosedCard({ message }: { message: string }) {
   return <Card className="mx-auto max-w-2xl border-amber-200 bg-amber-50/70 p-8 text-center"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-amber-700">Payment portal updating</p><h3 className="mt-2 text-xl font-extrabold text-navy-900">Payments are temporarily closed</h3><p className="mx-auto mt-3 max-w-lg text-sm leading-6 text-amber-900/75">{message}</p></Card>;
 }
 
-function CompactStudentDetailsStep({ form, errors, yearOptions, schoolLevels, maxNames, allowMultipleNames, onChange, onNameChange, onAddName, onRemoveName, onSchoolLevelChange }: { form: PaymentFormState; errors: FormErrors; yearOptions: string[]; schoolLevels: SchoolLevel[]; maxNames: number; allowMultipleNames: boolean; onChange: <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => void; onNameChange: (index: number, value: string) => void; onAddName: () => void; onRemoveName: (index: number) => void; onSchoolLevelChange: (level: SchoolLevel) => void }) {
+function CompactStudentDetailsStep({ form, errors, yearOptions, sectionSuggestions, schoolLevels, maxNames, allowMultipleNames, onChange, onNameChange, onAddName, onRemoveName, onSchoolLevelChange }: { form: PaymentFormState; errors: FormErrors; yearOptions: string[]; sectionSuggestions: string[]; schoolLevels: SchoolLevel[]; maxNames: number; allowMultipleNames: boolean; onChange: <K extends keyof PaymentFormState>(key: K, value: PaymentFormState[K]) => void; onNameChange: (index: number, value: string) => void; onAddName: () => void; onRemoveName: (index: number) => void; onSchoolLevelChange: (level: SchoolLevel) => void }) {
   return (
     <FormSection icon={ShieldCheck} eyebrow="01 · Student details" title="Add the attendee names" description="Use one email for the whole payment. School details apply to every attendee in this submission.">
       <div className="grid gap-5 md:grid-cols-2">
@@ -350,13 +359,14 @@ function CompactStudentDetailsStep({ form, errors, yearOptions, schoolLevels, ma
                <p className="mt-1 text-[10px] font-semibold text-slate-400">Maximum of {maxNames} attendee{maxNames === 1 ? "" : "s"} per transaction.</p>
              </div>
           </div>
-          <div className="space-y-2">{form.attendeeNames.map((name, index) => <div key={index} className="flex min-w-0 gap-2"><Input className="min-w-0" value={name} onChange={(event) => onNameChange(index, event.target.value)} placeholder={index === 0 ? "Full name" : `Attendee ${index + 1}`} autoComplete={index === 0 ? "name" : "off"} aria-label={`Attendee name ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => onRemoveName(index)} disabled={form.attendeeNames.length === 1} aria-label={`Remove attendee ${index + 1}`}>×</button></div>)}</div>
+           <div className="space-y-2">{form.attendeeNames.map((name, index) => <div key={index} className="flex min-w-0 gap-2"><Input className="min-w-0" value={name} onChange={(event) => onNameChange(index, event.target.value)} placeholder={index === 0 ? "e.g., Dela Cruz, Juan B." : `Attendee ${index + 1}`} autoComplete={index === 0 ? "name" : "off"} aria-label={`Attendee name ${index + 1}`} /><button type="button" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40" onClick={() => onRemoveName(index)} disabled={form.attendeeNames.length === 1} aria-label={`Remove attendee ${index + 1}`}>×</button></div>)}</div>
           <div className="mt-3 flex justify-end">{allowMultipleNames ? <Button type="button" size="sm" variant="outline" onClick={onAddName} disabled={form.attendeeNames.length >= maxNames}>Add attendee</Button> : null}</div>
           {errors.attendeeNames ? <p className="mt-1.5 text-xs font-semibold text-coral">{errors.attendeeNames}</p> : null}
         </div>
          <FormField label="School level" required error={errors.schoolLevel} className="md:col-span-2"><div className="flex min-w-0 flex-wrap gap-2">{schoolLevels.map((level) => <CapsuleOption key={level} label={shortSchoolLevel(level)} title={level} selected={form.schoolLevel === level} onClick={() => onSchoolLevelChange(level)} />)}</div></FormField>
-        <FormField label="Year level" required error={errors.yearLevel}><div className="flex min-w-0 flex-wrap gap-2">{yearOptions.map((year) => <CapsuleOption key={year} label={year} selected={form.yearLevel === year} onClick={() => onChange("yearLevel", year)} />)}</div></FormField>
-        {form.schoolLevel === "Senior High School" ? <FormField label="Strand" required error={errors.strand}><div className="flex min-w-0 flex-wrap gap-2">{strands.map((strand) => <CapsuleOption key={strand} label={strand} selected={form.strand === strand} onClick={() => onChange("strand", strand)} />)}</div></FormField> : null}
+         <FormField label="Year level" required error={errors.yearLevel}><div className="flex min-w-0 flex-wrap gap-2">{yearOptions.map((year) => <CapsuleOption key={year} label={year} selected={form.yearLevel === year} onClick={() => onChange("yearLevel", year)} />)}</div></FormField>
+         <FormField label="Section" required error={errors.section}><Input value={form.section} onChange={(event) => onChange("section", event.target.value)} placeholder="e.g., Section A" list="section-suggestions" autoComplete="off" /><datalist id="section-suggestions">{sectionSuggestions.map((section) => <option key={section} value={section} />)}</datalist></FormField>
+         {form.schoolLevel === "Senior High School" ? <FormField label="Strand" required error={errors.strand}><div className="flex min-w-0 flex-wrap gap-2">{strands.map((strand) => <CapsuleOption key={strand} label={strand} selected={form.strand === strand} onClick={() => onChange("strand", strand)} />)}</div></FormField> : null}
         {form.schoolLevel === "College" ? <FormField label="Course or program" required error={errors.course}><Input value={form.course} onChange={(event) => onChange("course", event.target.value)} placeholder="BS Computer Science" autoComplete="organization-title" /></FormField> : null}
       </div>
     </FormSection>

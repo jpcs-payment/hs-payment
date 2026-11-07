@@ -28,7 +28,7 @@ export function ReportsPage() {
     .filter((payment) => status === "All statuses" || payment.status === status)
     .filter((payment) => type === "All types" || payment.offeringName === type)
     .filter((payment) => method === "All methods" || payment.method === method)
-    .filter((payment) => `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => `${attendee.name} ${attendee.ticketId ?? ""}`).join(" ")} ${payment.email} ${payment.offeringName} ${payment.course ?? ""}`.toLowerCase().includes(query.toLowerCase()))
+    .filter((payment) => `${payment.reference} ${payment.studentName} ${getPaymentAttendees(payment).map((attendee) => `${attendee.name} ${attendee.ticketId ?? ""}`).join(" ")} ${payment.email} ${payment.offeringName} ${payment.section ?? ""} ${payment.course ?? ""}`.toLowerCase().includes(query.toLowerCase()))
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [data.payments, method, query, status, type]);
   const attended = payments.flatMap((payment) => getPaymentAttendees(payment).filter((attendee) => attendee.attendedAt).map((attendee) => ({ payment, attendee })));
   const paymentPendingAfterAttendance = attended.filter(({ payment }) => payment.paymentMode === "PayLater" && payment.paymentState === "Unpaid");
@@ -41,7 +41,7 @@ export function ReportsPage() {
   const ledgerPageCount = getPageCount(payments.length, PAGE_SIZE);
   const visiblePayments = getPageItems(payments, ledgerPage, PAGE_SIZE);
   const allocationExportHeaders = ["Recipient", "Allocated", "Collected", "Outstanding", "Pending", "Records"];
-  const allocationExportRows = allocationSummaries.map((summary) => [summary.recipient, summary.allocated, summary.collected, summary.outstanding, summary.pending, summary.recordCount]);
+  const allocationExportRows = allocationSummaries.map((summary) => [summary.recipient, formatCurrency(summary.allocated), formatCurrency(summary.collected), formatCurrency(summary.outstanding), formatCurrency(summary.pending), summary.recordCount]);
   const exportAllocations = () => downloadCsv(`jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.csv`, allocationExportHeaders, allocationExportRows);
   const exportAllocationsPdf = () => downloadPdf({ filename: `jpcs-allocation-report-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Allocation Report", subtitle: `${allocationSummaries.length} recipients`, headers: allocationExportHeaders, rows: allocationExportRows });
 

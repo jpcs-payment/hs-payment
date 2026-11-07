@@ -6,11 +6,11 @@ import { ResponsiveAttendanceFilters } from "../../components/AttendanceFilters"
 import { Card, Button, ConfirmDialog, FieldLabel, Input, Select } from "../../components/ui";
 import { useApp } from "../../context/AppContext";
 import { useToast } from "../../components/Toast";
-import { downloadCsv, downloadPdf } from "../../lib/export";
+import { downloadAttendancePdf, downloadCsv } from "../../lib/export";
 import { formatCurrency, formatDateTime } from "../../lib/utils";
 import { getPageCount, getPageItems } from "../../lib/pagination";
 import { getPaymentAttendees } from "../../lib/payment";
-import type { PaymentAttendee, PaymentRecord, TicketCheckInResult } from "../../types";
+import type { PaymentAttendee, PaymentRecord, SchoolLevel, TicketCheckInResult } from "../../types";
 
 interface ScanHistoryItem {
   id: string;
@@ -56,6 +56,8 @@ export function AttendancePage() {
   const [result, setResult] = useState<TicketCheckInResult | null>(null);
   const [scanHistory, setScanHistory] = useState<ScanHistoryItem[]>([]);
   const [eventFilter, setEventFilter] = useState("All types");
+  const [schoolLevelFilter, setSchoolLevelFilter] = useState<"All school levels" | SchoolLevel>("All school levels");
+  const [yearLevelFilter, setYearLevelFilter] = useState("All year levels");
   const [query, setQuery] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -86,19 +88,23 @@ export function AttendancePage() {
     ],
     [eligiblePayments],
   );
+  const schoolLevels = useMemo(() => ["All school levels", ...Array.from(new Set(eligiblePayments.map(({ payment }) => payment.schoolLevel))).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))], [eligiblePayments]);
+  const yearLevels = useMemo(() => ["All year levels", ...Array.from(new Set(eligiblePayments.map(({ payment }) => payment.yearLevel).filter(Boolean))).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }))], [eligiblePayments]);
   const filteredAttendance = useMemo(
     () =>
       eligiblePayments
         .filter((entry) => {
           const { payment, attendee } = entry;
-          if (
-            eventFilter !== "All types" &&
-            payment.offeringName !== eventFilter
-          )
-            return false;
+           if (
+             eventFilter !== "All types" &&
+             payment.offeringName !== eventFilter
+           )
+             return false;
+           if (schoolLevelFilter !== "All school levels" && payment.schoolLevel !== schoolLevelFilter) return false;
+           if (yearLevelFilter !== "All year levels" && payment.yearLevel !== yearLevelFilter) return false;
           if (
             query &&
-            !`${attendee.name} ${payment.studentName} ${payment.email} ${payment.reference} ${attendee.ticketId ?? ""}`
+             !`${attendee.name} ${payment.studentName} ${payment.email} ${payment.reference} ${payment.schoolLevel} ${payment.yearLevel} ${payment.section ?? ""} ${payment.strand ?? ""} ${attendee.ticketId ?? ""}`
               .toLowerCase()
               .includes(query.toLowerCase())
           )
@@ -123,7 +129,7 @@ export function AttendancePage() {
           return true;
         })
         .sort((a, b) => (b.attendee.attendedAt ?? "").localeCompare(a.attendee.attendedAt ?? "")),
-    [dateFrom, dateTo, eligiblePayments, eventFilter, query, timeFrom, timeTo],
+     [dateFrom, dateTo, eligiblePayments, eventFilter, query, schoolLevelFilter, timeFrom, timeTo, yearLevelFilter],
   );
   const checkedInCount = filteredAttendance.filter(
     (entry) => entry.attendee.attendedAt,
@@ -136,7 +142,7 @@ export function AttendancePage() {
 
   useEffect(() => {
     setPage(1);
-  }, [dateFrom, dateTo, eventFilter, query, timeFrom, timeTo]);
+  }, [dateFrom, dateTo, eventFilter, query, schoolLevelFilter, timeFrom, timeTo, yearLevelFilter]);
 
   useEffect(() => {
     setPage((current) => Math.min(current, pageCount));
@@ -319,14 +325,18 @@ export function AttendancePage() {
     setCameraError("");
   };
 
-  const attendanceExportHeaders = ["Type", "Attendee", "Email", "Reference", "Ticket ID", "Amount", "Payment method", "Payment mode", "Payment state", "Attendance status", "Checked in at"];
-  const attendanceExportRows = filteredAttendance.map(({ payment, attendee }) => [
-      payment.offeringName,
-      attendee.name,
-      payment.email,
-      payment.reference,
-      attendee.ticketId ?? "",
-      String(payment.amount),
+   const attendanceExportHeaders = ["Type", "Attendee", "Email", "School level", "Year level", "Section", "Strand", "Reference", "Ticket ID", "Amount", "Payment method", "Payment mode", "Payment state", "Attendance status", "Checked in at"];
+   const attendanceExportRows = filteredAttendance.map(({ payment, attendee }) => [
+       payment.offeringName,
+       attendee.name,
+       payment.email,
+       payment.schoolLevel,
+       payment.yearLevel,
+       payment.section ?? "",
+       payment.strand ?? "",
+       payment.reference,
+       attendee.ticketId ?? "",
+       formatCurrency(payment.amount),
       payment.method,
       payment.paymentMode,
       payment.paymentState,
@@ -345,7 +355,7 @@ export function AttendancePage() {
       message: `${filteredAttendance.length} ticket records were included.`,
     });
   };
-  const exportPdf = () => downloadPdf({ filename: `jpcs-attendance-${new Date().toISOString().slice(0, 10)}.pdf`, title: "Attendance Report", subtitle: `${filteredAttendance.length} matching tickets`, headers: attendanceExportHeaders, rows: attendanceExportRows, orientation: "landscape" });
+   const exportPdf = () => downloadAttendancePdf(filteredAttendance, schoolLevelFilter, yearLevelFilter, `jpcs-attendance-${new Date().toISOString().slice(0, 10)}.pdf`);
 
   const handleUndoAttendance = async () => {
     if (!undoId) return;
@@ -453,15 +463,21 @@ export function AttendancePage() {
         </div>
       </section>
       <ResponsiveAttendanceFilters
-        eventFilter={eventFilter}
-        events={events}
+         eventFilter={eventFilter}
+         events={events}
+         schoolLevelFilter={schoolLevelFilter}
+         schoolLevels={schoolLevels}
+         yearLevelFilter={yearLevelFilter}
+         yearLevels={yearLevels}
         query={query}
         dateFrom={dateFrom}
         dateTo={dateTo}
         timeFrom={timeFrom}
         timeTo={timeTo}
         resultCount={filteredAttendance.length}
-        onEventChange={setEventFilter}
+         onEventChange={setEventFilter}
+         onSchoolLevelChange={(value) => setSchoolLevelFilter(value as "All school levels" | SchoolLevel)}
+         onYearLevelChange={setYearLevelFilter}
         onQueryChange={setQuery}
         onDateFromChange={setDateFrom}
         onDateToChange={setDateTo}
@@ -620,8 +636,9 @@ function AttendanceList({
         <table className="w-full min-w-[1050px] text-left">
           <thead className="border-b border-line bg-mist text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">
             <tr>
-              <th className="px-5 py-3">Student</th>
-              <th className="px-5 py-3">Type</th>
+               <th className="px-5 py-3">Student</th>
+               <th className="px-5 py-3">School details</th>
+               <th className="px-5 py-3">Type</th>
               <th className="px-5 py-3">Ticket</th>
               <th className="px-5 py-3">Attendance</th>
               <th className="px-5 py-3">Payment</th>
@@ -658,7 +675,8 @@ function AttendanceList({
               </span>
             </div>
             <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
-              <Detail label="Type" value={payment.offeringName} />
+               <Detail label="Type" value={payment.offeringName} />
+               <Detail label="School details" value={`${payment.schoolLevel} · ${payment.yearLevel}${payment.section ? ` · ${payment.section}` : ""}${payment.strand ? ` · ${payment.strand}` : ""}`} />
                <Detail label="Ticket" value={attendee.ticketId ?? "-"} />
               <Detail
                 label="Attendance"
@@ -690,7 +708,7 @@ function AttendanceList({
 function AttendanceRow({ entry, onUndo }: { entry: AttendanceEntry; onUndo: (entry: AttendanceEntry) => void }) {
   const { payment, attendee } = entry;
   const pending = isUnpaidPayLater(payment);
-  return <tr className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{attendee.name}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.offeringName}</td><td className="px-5 py-4 font-mono text-[10px] font-bold text-navy-800">{attendee.ticketId}</td><td className="px-5 py-4">{attendee.attendedAt ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Checked in</span> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Not checked in</span>}</td><td className="px-5 py-4">{pending ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Payment pending</span> : <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Paid</span>}</td><td className="px-5 py-4 font-semibold text-slate-600">{attendee.attendedAt ? formatDateTime(attendee.attendedAt) : "-"}</td><td className="px-5 py-4">{attendee.attendedAt ? <Button size="sm" variant="outline" onClick={() => onUndo(entry)}><RotateCcw className="h-3.5 w-3.5" /> Undo</Button> : <span className="text-slate-400">-</span>}</td></tr>;
+   return <tr className="text-xs"><td className="px-5 py-4"><p className="font-bold text-navy-900">{attendee.name}</p><p className="mt-1 text-slate-400">{payment.email}</p></td><td className="px-5 py-4 text-slate-600">{payment.schoolLevel}<br /><span className="text-[10px]">{payment.yearLevel}{payment.section ? ` · ${payment.section}` : ""}{payment.strand ? ` · ${payment.strand}` : ""}</span></td><td className="px-5 py-4 font-semibold text-slate-600">{payment.offeringName}</td><td className="px-5 py-4 font-mono text-[10px] font-bold text-navy-800">{attendee.ticketId}</td><td className="px-5 py-4">{attendee.attendedAt ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Checked in</span> : <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Not checked in</span>}</td><td className="px-5 py-4">{pending ? <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-700">Payment pending</span> : <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold text-emerald-700">Paid</span>}</td><td className="px-5 py-4 font-semibold text-slate-600">{attendee.attendedAt ? formatDateTime(attendee.attendedAt) : "-"}</td><td className="px-5 py-4">{attendee.attendedAt ? <Button size="sm" variant="outline" onClick={() => onUndo(entry)}><RotateCcw className="h-3.5 w-3.5" /> Undo</Button> : <span className="text-slate-400">-</span>}</td></tr>;
 }
 
 function LegacyAttendanceList({ payments }: { payments: PaymentRecord[] }) {

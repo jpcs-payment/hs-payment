@@ -117,6 +117,10 @@ export function AdminPageSkeleton({ page = "", label = "Loading admin page" }: {
   );
 }
 
+export function AdminLoginSkeleton({ label = "Loading admin login" }: { label?: string }) {
+  return <main className="min-h-screen bg-mist px-4 py-5 sm:px-6 sm:py-8" role="status" aria-label={label}><div className="mx-auto flex min-h-[calc(100vh-2.5rem)] w-full max-w-6xl items-center"><div className="grid w-full overflow-hidden rounded-[2rem] border border-white/10 bg-white shadow-float xl:grid-cols-[0.92fr_1.08fr]"><Skeleton className="min-h-[520px] rounded-none bg-navy-900/90" /><section className="space-y-7 px-6 py-8 sm:px-10 sm:py-12 xl:px-14"><Skeleton className="h-8 w-48" /><div className="space-y-4"><Skeleton className="h-11 w-full" /><Skeleton className="h-11 w-full" /><Skeleton className="h-12 w-full" /></div><Skeleton className="h-4 w-full" /></section></div><span className="sr-only">{label}</span></div></main>;
+}
+
 export function Badge({ className, children }: { className?: string; children: ReactNode }) {
   return <span className={cn("inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-bold tracking-wide", className)}>{children}</span>;
 }

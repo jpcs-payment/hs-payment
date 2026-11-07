@@ -4,7 +4,7 @@ import { useApp } from "./context/AppContext";
 import { AppShell } from "./components/AppShell";
 import { PublicShell } from "./components/PublicShell";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { AdminPageSkeleton } from "./components/ui";
+import { AdminLoginSkeleton, AdminPageSkeleton } from "./components/ui";
 import { PaymentPage } from "./pages/student/PaymentPage";
 
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage").then((module) => ({ default: module.AdminLoginPage })));
@@ -30,6 +30,7 @@ function AdminLoginThemeToggle() {
 
 function AdminLoadingScreen({ label }: { label: string }) {
   const location = useLocation();
+  if (location.pathname === "/admin/login") return <AdminLoginSkeleton label={label} />;
   return <div className="min-h-screen bg-mist px-4 py-8 sm:px-6 lg:px-8"><AdminPageSkeleton page={location.pathname} label={label} /></div>;
 }
 
@@ -40,6 +41,7 @@ export function App() {
       <Suspense fallback={<AdminLoadingScreen label="Loading JPCS Payment" />}>
         <Routes>
           <Route path="/" element={<PublicShell><PaymentPage /></PublicShell>} />
+          <Route path="/test-payment" element={<PublicShell><PaymentPage /></PublicShell>} />
           <Route path="/payment" element={<Navigate to="/" replace />} />
           <Route path="/login" element={<Navigate to="/" replace />} />
           <Route path="/admin/login" element={<AdminLoginPage />} />

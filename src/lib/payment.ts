@@ -15,6 +15,9 @@ export const getPaymentAttendees = (payment: PaymentRecord): PaymentAttendee[] =
 export const getPaymentNames = (payment: PaymentRecord) =>
   getPaymentAttendees(payment).map((attendee) => attendee.name);
 
+export const getPaymentNameLines = (payment: PaymentRecord) =>
+  getPaymentNames(payment).map((name) => name.trim()).filter(Boolean).join("\n");
+
 export const getPaymentAttendeeSummary = (payment: PaymentRecord) => {
   const names = getPaymentNames(payment);
   if (names.length <= 1) return names[0] ?? "Unnamed attendee";

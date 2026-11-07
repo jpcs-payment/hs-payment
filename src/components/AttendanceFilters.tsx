@@ -4,6 +4,10 @@ import { Button, Card, FieldLabel, Input, Select } from "./ui";
 interface AttendanceFiltersProps {
   eventFilter: string;
   events: string[];
+  schoolLevelFilter: string;
+  schoolLevels: string[];
+  yearLevelFilter: string;
+  yearLevels: string[];
   query: string;
   dateFrom: string;
   dateTo: string;
@@ -11,6 +15,8 @@ interface AttendanceFiltersProps {
   timeTo: string;
   resultCount: number;
   onEventChange: (value: string) => void;
+  onSchoolLevelChange: (value: string) => void;
+  onYearLevelChange: (value: string) => void;
   onQueryChange: (value: string) => void;
   onDateFromChange: (value: string) => void;
   onDateToChange: (value: string) => void;
@@ -23,6 +29,10 @@ interface AttendanceFiltersProps {
 export function ResponsiveAttendanceFilters({
   eventFilter,
   events,
+  schoolLevelFilter,
+  schoolLevels,
+  yearLevelFilter,
+  yearLevels,
   query,
   dateFrom,
   dateTo,
@@ -30,6 +40,8 @@ export function ResponsiveAttendanceFilters({
   timeTo,
   resultCount,
   onEventChange,
+  onSchoolLevelChange,
+  onYearLevelChange,
   onQueryChange,
   onDateFromChange,
   onDateToChange,
@@ -55,7 +67,7 @@ export function ResponsiveAttendanceFilters({
           </Button>
         </div>
       </div>
-      <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-7">
+      <div className="mt-4 grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-9">
         <div className="min-w-0 lg:col-span-2">
           <FieldLabel>Search</FieldLabel>
           <div className="relative">
@@ -67,6 +79,18 @@ export function ResponsiveAttendanceFilters({
           <FieldLabel>Type</FieldLabel>
           <Select className="min-w-0" value={eventFilter} onChange={(event) => onEventChange(event.target.value)}>
             {events.map((event) => <option key={event}>{event}</option>)}
+          </Select>
+        </div>
+        <div className="min-w-0">
+          <FieldLabel>School level</FieldLabel>
+          <Select className="min-w-0" value={schoolLevelFilter} onChange={(event) => onSchoolLevelChange(event.target.value)}>
+            {schoolLevels.map((level) => <option key={level}>{level}</option>)}
+          </Select>
+        </div>
+        <div className="min-w-0">
+          <FieldLabel>Year level</FieldLabel>
+          <Select className="min-w-0" value={yearLevelFilter} onChange={(event) => onYearLevelChange(event.target.value)}>
+            {yearLevels.map((level) => <option key={level}>{level}</option>)}
           </Select>
         </div>
         <div className="min-w-0">

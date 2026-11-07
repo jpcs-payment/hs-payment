@@ -482,7 +482,7 @@ export function OfferingsPage() {
     offering.name,
     offering.slug,
     offering.description,
-    offering.amount,
+    formatCurrency(offering.amount),
     offering.active ? "Yes" : "No",
     offering.availableMethods.join(" | "),
     offering.payLaterMethods.join(" | "),

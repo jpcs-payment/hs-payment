@@ -3,6 +3,7 @@ import { getPaymentPayerIds } from "../lib/payment";
 
 export const initialData: AppData = {
   students: [],
+  sections: [],
   offerings: [],
   paymentMethods: [
     {
