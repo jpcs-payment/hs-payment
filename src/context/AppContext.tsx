@@ -23,19 +23,15 @@ import type {
   TicketCheckInResult,
 } from "../types";
 
-export type AdminSiteFilter = "all" | PaymentSiteKey;
-
 interface AppContextValue {
   data: AppData;
   session: Session | null;
   authLoading: boolean;
   dataLoading: boolean;
   dataError: string | null;
-  adminSiteFilter: AdminSiteFilter;
   login: (session: Session) => void;
   logout: () => void;
   retryData: () => Promise<void>;
-  setAdminSiteFilter: (filter: AdminSiteFilter) => Promise<void>;
   signInAdmin: (email: string, password: string) => Promise<void>;
   submitPayment: (input: NewPaymentInput) => Promise<PaymentRecord>;
   approvePayment: (paymentId: string) => Promise<PaymentRecord | undefined>;
@@ -53,6 +49,7 @@ interface AppContextValue {
   movePayerToRecentlyDeleted: (payerId: string) => Promise<void>;
   restorePayer: (payerId: string) => Promise<void>;
   deletePayerPermanently: (payerId: string) => Promise<void>;
+  deleteAllTestData: () => Promise<void>;
   savePaymentMethod: (method: PaymentMethodConfig) => Promise<void>;
   savePublicSiteSettings: (settings: PublicSiteSettings) => Promise<void>;
   resetDemo: () => void;
@@ -132,16 +129,19 @@ const mapMethod = (row: DbRow): PaymentMethodConfig => ({
   qrImage: row.qr_image ?? undefined,
 });
 
-const mapSiteSettings = (row?: DbRow | null, fallbackSiteKey: PaymentSiteKey = "public-payment"): PublicSiteSettings => ({
-  siteKey: row?.site_key === "test-payment" ? "test-payment" : fallbackSiteKey,
-  isOpen: row ? Boolean(row.is_open) : false,
-  message: String(row?.public_message ?? defaultPublicSiteMessage),
-  allowMultipleNames: Boolean(row?.allow_multiple_names),
-  maxNames: Math.min(20, Math.max(1, Number(row?.max_names) || 10)),
-  visibleSchoolLevels: Array.isArray(row?.visible_school_levels)
-    ? schoolLevels.filter((level) => row.visible_school_levels.includes(level))
-    : schoolLevels,
-});
+const mapSiteSettings = (row?: DbRow | null, fallbackSiteKey: PaymentSiteKey = "public-payment"): PublicSiteSettings => {
+  const siteKey = row?.site_key === "test-payment" ? "test-payment" : fallbackSiteKey;
+  return {
+    siteKey,
+    isOpen: siteKey === "test-payment" || Boolean(row?.is_open),
+    message: String(row?.public_message ?? defaultPublicSiteMessage),
+    allowMultipleNames: Boolean(row?.allow_multiple_names),
+    maxNames: Math.min(20, Math.max(1, Number(row?.max_names) || 10)),
+    visibleSchoolLevels: Array.isArray(row?.visible_school_levels)
+      ? schoolLevels.filter((level) => row.visible_school_levels.includes(level))
+      : schoolLevels,
+  };
+};
 
 const mapPayer = (row: DbRow): Student => ({
   id: String(row.id),
@@ -252,6 +252,14 @@ const fetchPaymentRowsForOffering = async (client: ReturnType<typeof requireSupa
   return data ?? [];
 };
 
+const removePaymentProofs = async (client: ReturnType<typeof requireSupabase>, paymentRows: DbRow[]) => {
+  const proofPaths = [...new Set(paymentRows.map((payment) => typeof payment.proof_path === "string" ? payment.proof_path : "").filter(Boolean))];
+  for (let offset = 0; offset < proofPaths.length; offset += 1000) {
+    const { error } = await client.storage.from(paymentProofBucket).remove(proofPaths.slice(offset, offset + 1000));
+    if (error) throw error;
+  }
+};
+
 const dataUrlToBlob = (value: string, label = "image") => {
   const [header, body] = value.split(",", 2);
   if (!header || !body) throw new Error(`The ${label} could not be read.`);
@@ -284,9 +292,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(Boolean(supabase));
   const [dataError, setDataError] = useState<string | null>(null);
-  const [adminSiteFilter, setAdminSiteFilterState] = useState<AdminSiteFilter>("public-payment");
 
-  const loadData = async (admin = false, requestedSiteFilter: AdminSiteFilter = adminSiteFilter) => {
+  const loadData = async (admin = false) => {
     setDataLoading(true);
     setDataError(null);
     try {
@@ -321,8 +328,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const [payersResponse, paymentsResponse, attendeesResponse] = await Promise.all([
-        (requestedSiteFilter === "all" ? client.from("hs-payers").select("*") : client.from("hs-payers").select("*").eq("site_key", requestedSiteFilter)).order("created_at", { ascending: false }),
-        (requestedSiteFilter === "all" ? client.from("hs-payments").select("*") : client.from("hs-payments").select("*").eq("site_key", requestedSiteFilter)).order("submitted_at", { ascending: false }),
+        client.from("hs-payers").select("*").order("created_at", { ascending: false }),
+        client.from("hs-payments").select("*").order("submitted_at", { ascending: false }),
         client.from("hs-payment-attendees").select("*").order("position", { ascending: true }),
       ]);
       if (payersResponse.error) throw payersResponse.error;
@@ -417,17 +424,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const retryData = async () => {
     try {
-      await loadData(session?.role === "admin", adminSiteFilter);
-    } catch {
-      // The load error is exposed through dataError for the retry UI.
-    }
-  };
-
-  const setAdminSiteFilter = async (filter: AdminSiteFilter) => {
-    setAdminSiteFilterState(filter);
-    if (session?.role !== "admin") return;
-    try {
-      await loadData(true, filter);
+      await loadData(session?.role === "admin");
     } catch {
       // The load error is exposed through dataError for the retry UI.
     }
@@ -447,7 +444,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const submitPayment = async (input: NewPaymentInput) => {
-    if (!data.siteSettings.isOpen) throw new Error(data.siteSettings.message);
+    if (data.siteSettings.siteKey !== "test-payment" && !data.siteSettings.isOpen) throw new Error(data.siteSettings.message);
     if (!data.siteSettings.visibleSchoolLevels.includes(input.schoolLevel)) throw new Error("That school level is not currently available.");
     const offering = data.offerings.find((item) => item.id === input.offeringId && item.active && !item.deletedAt);
     if (!offering) throw new Error("The Film Showing payment type is not available.");
@@ -876,6 +873,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const deleteAllTestData = async () => {
+    const client = requireSupabase();
+    const { data: paymentRows, error: paymentError } = await client
+      .from("hs-payments")
+      .select("id,proof_path")
+      .eq("site_key", "test-payment");
+    if (paymentError) throw paymentError;
+    await removePaymentProofs(client, paymentRows ?? []);
+    const { error } = await client.rpc("hs_delete_all_test_site_data");
+    if (error) throw error;
+    try {
+      await loadData(true);
+    } catch {
+      setData((current) => ({
+        ...current,
+        students: current.students.filter((student) => student.siteKey !== "test-payment"),
+        payments: current.payments.filter((payment) => payment.siteKey !== "test-payment"),
+      }));
+    }
+  };
+
   const createOffering = async (input: NewPaymentOfferingInput, image?: PaymentOfferingImageUpdate) => {
     const client = requireSupabase();
     const offeringId = createUuid();
@@ -1010,7 +1028,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, adminSiteFilter, login, logout, retryData, setAdminSiteFilter, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, moveOfferingToRecentlyDeleted, restoreOffering, deleteOfferingPermanently, movePayerToRecentlyDeleted, restorePayer, deletePayerPermanently, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
+    <AppContext.Provider value={{ data, session, authLoading, dataLoading, dataError, login, logout, retryData, signInAdmin, submitPayment, approvePayment, markPayLaterReceived, rejectPayment, sendApprovalEmail, sendPayLaterEmail, checkInTicket, undoAttendance, createOffering, saveOffering, moveOfferingToRecentlyDeleted, restoreOffering, deleteOfferingPermanently, movePayerToRecentlyDeleted, restorePayer, deletePayerPermanently, deleteAllTestData, savePaymentMethod, savePublicSiteSettings, resetDemo }}>
       {children}
     </AppContext.Provider>
   );

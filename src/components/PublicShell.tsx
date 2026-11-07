@@ -11,14 +11,15 @@ export function PublicShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen min-w-0 flex-col overflow-x-hidden bg-mist text-ink">
       <header className="border-b border-line bg-white/90 backdrop-blur">
-        <div className="mx-auto flex min-h-[78px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-           {dataLoading ? <Skeleton className="h-10 w-52" /> : <OrganizationLogo surface="light" />}
-           {dataLoading ? <Skeleton className="h-9 w-9 rounded-xl" /> : <ThemeToggle />}
+       <div className="mx-auto flex min-h-[78px] max-w-[1180px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+           <OrganizationLogo surface="light" />
+           <ThemeToggle />
         </div>
       </header>
-      {dataLoading ? <div className="border-y border-line bg-white px-4 py-3 sm:px-6"><div className="mx-auto flex max-w-[1180px] items-center gap-3"><Skeleton className="h-9 w-9 rounded-full" /><Skeleton className="h-9 flex-1" /><Skeleton className="h-9 w-9 rounded-full" /></div></div> : <><div className="lg:hidden"><LogoMarquee /></div><div className="hidden lg:block"><LogoMarquee /></div></>}
-      <main className="flex-1 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">{dataLoading ? <PublicShellSkeleton /> : children}</main>
-      <footer className="border-t border-line bg-white px-4 py-6 text-center text-[11px] leading-5 text-slate-400 sm:px-6 lg:px-8">{dataLoading ? <div className="mx-auto max-w-xs space-y-2"><Skeleton className="mx-auto h-3 w-28" /><Skeleton className="mx-auto h-3 w-full" /><Skeleton className="mx-auto h-3 w-4/5" /></div> : <><p className="font-semibold">JPCS-LCC @ 2026</p><p className="mt-2 break-words text-[10px] font-medium">{BRANDING.credits[0]}</p><p className="break-words text-[10px] font-medium">{BRANDING.credits[1]}</p></>}</footer>
+       <div className="lg:hidden"><LogoMarquee /></div>
+       <div className="hidden lg:block"><LogoMarquee /></div>
+       <main className="flex-1 px-4 py-6 sm:px-6 sm:py-10 lg:px-8">{dataLoading ? <PublicShellSkeleton /> : children}</main>
+       <footer className="border-t border-line bg-white px-4 py-6 text-center text-[11px] leading-5 text-slate-400 sm:px-6 lg:px-8"><p className="font-semibold">JPCS-LCC @ 2026</p><p className="mt-2 break-words text-[10px] font-medium">{BRANDING.credits[0]}</p><p className="break-words text-[10px] font-medium">{BRANDING.credits[1]}</p></footer>
     </div>
   );
 }

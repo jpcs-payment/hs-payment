@@ -4,11 +4,12 @@ import type { LucideIcon } from "lucide-react";
 import { BarChart3, ChevronLeft, ChevronRight, LogOut, MoreHorizontal, ReceiptText, RefreshCw, ScanLine, Search, Settings2, Tags, Trash2, UsersRound } from "lucide-react";
 import { useApp } from "../context/AppContext";
 import { formatCurrency } from "../lib/utils";
-import { AdminPageSkeleton, Avatar, Button, ConfirmDialog, Input, Select } from "./ui";
+import { AdminPageSkeleton, Avatar, Button, ConfirmDialog, Input } from "./ui";
 import { OrganizationLogo } from "./OrganizationLogo";
 import { ThemeToggle } from "./ThemeToggle";
 import { BRANDING } from "../lib/branding";
 import { getPaymentAttendeeSummary, getPaymentAttendees } from "../lib/payment";
+import { useToast } from "./Toast";
 
 interface NavItem {
   label: string;
@@ -46,12 +47,15 @@ interface SearchResult {
 }
 
 export function AppShell() {
-  const { data, logout, session, dataLoading, dataError, retryData, adminSiteFilter, setAdminSiteFilter } = useApp();
+  const { data, logout, session, dataLoading, dataError, retryData, deleteAllTestData } = useApp();
+  const { pushToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
+  const [deleteTestConfirmOpen, setDeleteTestConfirmOpen] = useState(false);
+  const [deleteTestLoading, setDeleteTestLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const title = pageTitles.find(([path]) => location.pathname.startsWith(path))?.[1] ?? "Admin";
   const moreActive = mobileMoreNavigation.some((item) => location.pathname.startsWith(item.to));
@@ -87,6 +91,19 @@ export function AppShell() {
     setSignOutConfirmOpen(false);
     logout();
     navigate("/admin/login", { replace: true });
+  };
+
+  const handleDeleteAllTestData = async () => {
+    setDeleteTestLoading(true);
+    try {
+      await deleteAllTestData();
+      setDeleteTestConfirmOpen(false);
+      pushToast({ tone: "success", title: "Test data deleted", message: "All test submissions and their associated records were removed. Public data was not changed." });
+    } catch (error) {
+      pushToast({ tone: "error", title: "Could not delete test data", message: error instanceof Error ? error.message : "Try again." });
+    } finally {
+      setDeleteTestLoading(false);
+    }
   };
 
   if (dataLoading) return <div className="min-h-screen bg-mist px-4 py-8 sm:px-6 lg:px-8"><AdminPageSkeleton page={location.pathname} label="Loading admin workspace" /></div>;
@@ -125,7 +142,7 @@ export function AppShell() {
            <header className="sticky top-0 z-30 flex min-h-[76px] flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line bg-white/90 px-4 py-3 backdrop-blur sm:px-6 lg:px-8">
              <div className="flex min-w-0 items-center gap-2"><button className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-line bg-white text-slate-500 transition hover:border-navy-300 hover:bg-navy-50 hover:text-navy-900 xl:flex" onClick={() => setCollapsed((value) => !value)} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>{collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}</button><div className="min-w-0"><h1 className="truncate text-lg font-extrabold tracking-tight text-navy-900">{title}</h1></div></div>
               <div className="relative order-3 basis-full xl:order-none xl:basis-auto"><div className="relative w-full xl:w-[360px]"><Search className="pointer-events-none absolute left-3.5 top-3 h-4 w-4 text-slate-400" /><Input className="pl-10 pr-3" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Escape") setSearchQuery(""); }} placeholder="Search payers, payments, types" aria-label="Search admin records" />{searchQuery.trim() ? <div className="absolute left-0 right-0 top-[3.25rem] z-50 overflow-hidden rounded-2xl border border-line bg-white p-1.5 shadow-float">{searchResults.length ? searchResults.map((result, index) => <button key={`${result.to}-${result.label}-${index}`} className="flex w-full min-w-0 items-start gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-mist" onClick={() => { navigate(result.to); setSearchQuery(""); }}><span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-navy-50 text-navy-700"><Search className="h-3.5 w-3.5" /></span><span className="min-w-0"><span className="block break-words text-xs font-bold text-navy-900">{result.label}</span><span className="mt-0.5 block break-words text-[10px] text-slate-500">{result.detail}</span></span></button>) : <p className="px-3 py-4 text-center text-xs text-slate-500">No matching records.</p>}</div> : null}</div></div>
-                <div className="flex items-center gap-2 sm:gap-3"><Select className="h-9 w-auto min-w-[132px] px-2.5 text-[11px] font-bold" value={adminSiteFilter} onChange={(event) => void setAdminSiteFilter(event.target.value as typeof adminSiteFilter)} aria-label="Admin site filter"><option value="public-payment">Public site</option><option value="test-payment">Test site</option><option value="all">All sites</option></Select><ThemeToggle iconOnly /><button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-white/80 text-slate-600 transition hover:bg-slate-100 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-700" onClick={() => window.location.reload()} aria-label="Refresh site" title="Refresh site"><RefreshCw className="h-3.5 w-3.5" /></button><Avatar initials={(session?.adminName ?? "AD").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()} color="#163A63" size="sm" /></div>
+                 <div className="flex items-center gap-2 sm:gap-3"><ThemeToggle iconOnly /><button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-red-100 bg-red-50/70 text-coral transition hover:bg-red-100 hover:text-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-coral/40 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setDeleteTestConfirmOpen(true)} disabled={deleteTestLoading} aria-label="Delete all test data" title="Delete all test data"><Trash2 className="h-3.5 w-3.5" /></button><button type="button" className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-line bg-white/80 text-slate-600 transition hover:bg-slate-100 hover:text-navy-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy-700" onClick={() => window.location.reload()} aria-label="Refresh site" title="Refresh site"><RefreshCw className="h-3.5 w-3.5" /></button><Avatar initials={(session?.adminName ?? "AD").split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()} color="#163A63" size="sm" /></div>
             </header>
             <main className="flex-1 px-4 pt-6 pb-28 sm:px-6 sm:pt-8 sm:pb-28 xl:px-8 xl:pb-8"><Outlet /></main>
             <footer className="border-t border-line px-4 pt-5 pb-24 text-center text-[11px] leading-5 text-slate-400 sm:px-6 xl:px-8 xl:py-5"><p className="font-semibold">JPCS-LCC @ 2026</p><p className="mt-2 break-words text-[10px] font-medium">{BRANDING.credits[0]}</p><p className="break-words text-[10px] font-medium">{BRANDING.credits[1]}</p></footer>
@@ -154,8 +171,9 @@ export function AppShell() {
            </nav>
          </div>
       </div>
-       </div>
-       <ConfirmDialog open={signOutConfirmOpen} onClose={() => setSignOutConfirmOpen(false)} onConfirm={handleLogout} title="Sign out of admin?" description="Are you sure you want to sign out of the admin workspace?" confirmLabel="Sign out" danger />
-       </>
+        </div>
+        <ConfirmDialog open={signOutConfirmOpen} onClose={() => setSignOutConfirmOpen(false)} onConfirm={handleLogout} title="Sign out of admin?" description="Are you sure you want to sign out of the admin workspace?" confirmLabel="Sign out" danger />
+        <ConfirmDialog open={deleteTestConfirmOpen} onClose={() => { if (!deleteTestLoading) setDeleteTestConfirmOpen(false); }} onConfirm={() => void handleDeleteAllTestData()} title="Delete all test data?" description="This permanently deletes every test-site payment, attendee, payer, email record, and uploaded proof file. Public-site data and shared payment settings will not be changed. This cannot be undone." confirmLabel="Delete all test data" danger loading={deleteTestLoading} />
+        </>
   );
 }
